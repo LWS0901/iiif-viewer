@@ -167,7 +167,7 @@
   <div class="search">
     <label class="search-bar">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="manifestUrl" type="text" placeholder="IIIF Manifest 또는 3D, 이미지, 영상 파일 URL" aria-label="IIIF Manifest URL">
+      <input id="manifestUrl" type="text" placeholder="매니페스트, 소장품 페이지 주소, 파일 URL 무엇이든 붙여넣으세요" aria-label="매니페스트 또는 소장품 페이지 주소">
     </label>
     <button class="btn btn-primary btn-sm" id="loadBtn">불러오기</button>
     <button class="btn btn-secondary-dark btn-sm" id="fileBtn" title="내 컴퓨터에서 파일 열기">파일 열기</button>
@@ -198,7 +198,7 @@
       <div id="dropHint" hidden><span class="display-md">여기에 놓으세요</span></div>
       <div id="empty">
         <h1 class="display-md">세계의 디지털 컬렉션을, 내 언어로.</h1>
-        <p>IIIF 매니페스트 URL이나 3D, 이미지, 영상 파일 URL을 넣거나 내 컴퓨터의 파일을 이 영역에 끌어다 놓으세요.<br>메타데이터는 LLM이 원하는 언어로 번역합니다.</p>
+        <p>소장품 페이지 주소만 붙여넣어도 매니페스트를 찾아서 열어요. 내 컴퓨터의 파일은 이 영역에 끌어다 놓으세요.<br>메타데이터는 LLM이 원하는 언어로 번역합니다.</p>
         <p class="formats">3D: glTF, GLB, OBJ(+MTL), STL, PLY, FBX, DAE, 3MF, USDZ, 3DS, VRML, PCD, XYZ, VTK, AMF, 3DM, LWO, KMZ, VOX, DRC, PDB, G-code</p>
         <div class="chips" id="samples">
           <button class="chip" data-url="https://iiif.io/api/presentation/4.0/example/uc08_3d_annotation.json">그리스 조각상 (3D)</button>
@@ -719,9 +719,100 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     setStatus((p.v === '-' ? '파일' : `IIIF Presentation v${p.v}`) + (parts.length ? ' · ' + parts.join(' · ') : ' · 표시할 콘텐츠 없음'));
   }
 
-  async function load(url, fromQuery){
-    url = (url||'').trim(); if (!url) return;
-    $('manifestUrl').value = url;
+  // ---------- 주소 해석: 소장품 페이지 주소 → 매니페스트 주소 ----------
+  // 잘 알려진 기관은 규칙으로 바로 변환하고, 나머지는 서버(/api/resolve)가 페이지를 읽어 매니페스트를 찾음
+  const SITE_RULES = [
+    [/europeana\.eu\/(?:[a-z]{2}\/)?item\/(\d+)\/([^/?#]+)/i, m => `https://iiif.europeana.eu/presentation/${m[1]}/${m[2]}/manifest?format=3`],
+    [/harvardartmuseums\.org\/collections\/object\/(\d+)/i, m => `https://iiif.harvardartmuseums.org/manifests/object/${m[1]}`],
+    [/(?:www\.)?artic\.edu\/artworks\/(\d+)/i, m => `https://api.artic.edu/api/v1/artworks/${m[1]}/manifest.json`],
+    [/collections\.britishart\.yale\.edu\/catalog\/tms:(\d+)/i, m => `https://manifests.collections.yale.edu/ycba/obj/${m[1]}`],
+    [/digital\.bodleian\.ox\.ac\.uk\/objects\/([0-9a-f-]{36})/i, m => `https://iiif.bodleian.ox.ac.uk/iiif/manifest/${m[1]}.json`],
+    [/gallica\.bnf\.fr\/ark:\/12148\/([a-z0-9]+)(?!.*\/manifest)/i, m => `https://gallica.bnf.fr/iiif/ark:/12148/${m[1]}/manifest.json`],
+    [/dl\.ndl\.go\.jp\/(?:pid|info:ndljp\/pid)\/(\d+)/i, m => `https://dl.ndl.go.jp/api/iiif/${m[1]}/manifest.json`],
+    [/purl\.stanford\.edu\/([a-z]{2}\d{3}[a-z]{2}\d{4})\/?(?:[?#]|$)/i, m => `https://purl.stanford.edu/${m[1]}/iiif3/manifest`],
+    [/(?:www\.)?loc\.gov\/(?:item|resource)\/([^/?#]+)\/?(?:[?#]|$)/i, m => `https://www.loc.gov/item/${m[1]}/manifest.json`],
+    [/archive\.org\/details\/([^/?#]+)/i, m => `https://iiif.archive.org/iiif/${m[1]}/manifest.json`],
+    [/e-codices\.unifr\.ch\/(?:[a-z]{2}\/)?(?:list\/one\/)?([a-z]+)\/([a-z0-9_.-]+)/i, m => `https://www.e-codices.unifr.ch/metadata/iiif/${m[1]}-${m[2]}/manifest.json`],
+  ];
+  const API_BASE = (window.TRANSLATE_API || '/api/translate').replace(/\/translate$/, '');
+
+  // 뷰어 링크(Mirador, UV, 이 뷰어 등)에 들어 있는 manifest= 값 꺼내기
+  function manifestParam(u){
+    try {
+      const x = new URL(u);
+      const params = new URLSearchParams(x.search + '&' + x.hash.replace(/^#\??/, ''));
+      for (const k of ['manifest', 'iiif-content', 'manifestUri', 'manifestId', 'iiif_manifest']) {
+        const v = params.get(k); if (v && /^https?:\/\//i.test(v)) return v;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function ruleFor(u){
+    if (/manifest|\/iiif\/|\.json([?#]|$)/i.test(u) && !/europeana\.eu\/(?:[a-z]{2}\/)?item\//i.test(u)) return null;
+    for (const [re, fn] of SITE_RULES) { const m = u.match(re); if (m) return fn(m); }
+    return null;
+  }
+
+  // JSON(매니페스트, 컬렉션, info.json, glTF 등)을 화면에 열기
+  function openJson(json, url){
+    const name = decodeURIComponent((url || '').split(/[?#]/)[0].split('/').pop() || 'JSON');
+    if (/image\/[23]|iiif\.io\/api\/image/.test(JSON.stringify(json['@context']||'')) || String(json.protocol || '').includes('iiif.io/api/image')) {
+      const it = singleItem(name, url, 'image'); it.canvases[0].svc = String(json.id || json['@id'] || url.replace(/\/info\.json.*$/,'')).replace(/\/$/,''); return apply(it, url);
+    }
+    if (json.asset?.version || json.metadata?.type === 'Object' || json.object) return apply(singleItem(name, url, 'model', { format: json.asset ? 'model/gltf+json' : 'application/vnd.threejs+json' }), url);
+    const p = parseManifest(json);
+    if (p.collection) return showCollection(p.items, url);
+    if (!p.canvases.length && !p.orig.label) throw new Error('IIIF 매니페스트가 아닙니다');
+    apply(p, url, json);
+  }
+
+  // 브라우저에서 바로 가져오기. 성공하면 true, HTML 페이지이거나 막히면 false
+  async function tryDirect(url){
+    const name = decodeURIComponent(url.split(/[?#]/)[0].split('/').pop() || url);
+    let res;
+    try { res = await fetch(url, { headers:{ Accept:'application/ld+json, application/json;q=0.9, */*;q=0.5' } }); }
+    catch (e) { return false; }                       // CORS 등으로 막힘 → 서버로
+    if (!res.ok) return false;
+    const ctype = res.headers.get('content-type') || '';
+    if (/text\/html/i.test(ctype)) return false;      // 소장품 페이지 → 서버가 매니페스트를 찾음
+    if (/^model\/|octet-stream|sla|ply/i.test(ctype)) { apply(singleItem(name, url, 'model', { format: ctype }), url); return true; }
+    if (/^image\//i.test(ctype)) { apply(singleItem(name, url, 'image'), url); return true; }
+    if (/^video\//i.test(ctype)) { apply(singleItem(name, url, 'video'), url); return true; }
+    if (/^audio\//i.test(ctype)) { apply(singleItem(name, url, 'audio'), url); return true; }
+    const txt = await res.text();
+    if (/^\s*</.test(txt)) return false;
+    let json; try { json = JSON.parse(txt); } catch (e) { apply(singleItem(name, url, 'model', { format: ctype }), url); return true; }
+    try { openJson(json, url); return true; } catch (e) { return false; }
+  }
+
+  // 서버에 맡기기: 페이지를 읽어 매니페스트를 찾고, CORS가 막힌 매니페스트는 대신 가져옴
+  async function tryResolve(url){
+    let r, j;
+    try { r = await fetch(`${API_BASE}/resolve?url=${encodeURIComponent(url)}`); j = await r.json(); }
+    catch (e) { throw new Error('이 주소를 직접 열 수 없고, 매니페스트 찾기 서버에도 연결하지 못했습니다'); }
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    if (j.json) { openJson(j.json, j.url); }
+    else if (!(await tryDirect(j.url))) throw new Error('찾은 매니페스트를 열지 못했습니다: ' + j.url);
+    if (j.url !== url) setStatus($('status').textContent + ' · 페이지에서 매니페스트를 찾았어요');
+    setUrlParam(j.url);
+    return true;
+  }
+
+  async function load(input, fromQuery){
+    input = (input || '').trim(); if (!input) return;
+    // 매니페스트 JSON 자체를 붙여넣은 경우
+    if (input.startsWith('{')) {
+      $('manifestUrl').value = '';
+      try { const json = JSON.parse(input); setUrlParam(''); openJson(json, json.id || json['@id'] || ''); }
+      catch (e) { setStatus('붙여넣은 JSON을 읽지 못했습니다: ' + e.message, true); }
+      return;
+    }
+    if (!/^https?:\/\//i.test(input)) {
+      if (/^[\w-]+(\.[\w-]+)+(\/|$)/.test(input)) input = 'https://' + input;
+      else return setStatus('매니페스트 주소, 소장품 페이지 주소, 또는 매니페스트 JSON을 넣어 주세요', true);
+    }
+    $('manifestUrl').value = input;
+    const url = manifestParam(input) || input;
     setUrlParam(url);
     const name = decodeURIComponent(url.split(/[?#]/)[0].split('/').pop() || url);
     if (MODEL_EXT.test(url)) return apply(singleItem(name, url, 'model'), url);
@@ -730,26 +821,13 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     if (IMAGE_EXT.test(url)) return apply(singleItem(name, url, 'image'), url);
     setStatus('<span class="spinner"></span>불러오는 중…');
     try {
-      const res = await fetch(url, { headers:{ Accept:'application/ld+json, application/json;q=0.9, */*;q=0.5' } });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const ctype = res.headers.get('content-type') || '';
-      if (/^model\/|octet-stream|sla|ply/i.test(ctype)) return apply(singleItem(name, url, 'model', { format: ctype }), url);
-      if (/^image\//i.test(ctype)) return apply(singleItem(name, url, 'image'), url);
-      if (/^video\//i.test(ctype)) return apply(singleItem(name, url, 'video'), url);
-      if (/^audio\//i.test(ctype)) return apply(singleItem(name, url, 'audio'), url);
-      const txt = await res.text();
-      let json; try { json = JSON.parse(txt); } catch (e) { return apply(singleItem(name, url, 'model', { format: ctype }), url); }
-      // IIIF Image API info.json
-      if (/image\/[23]|iiif\.io\/api\/image/.test(JSON.stringify(json['@context']||'')) || (json.protocol || '').includes('iiif.io/api/image')) {
-        const it = singleItem(name, url, 'image'); it.canvases[0].svc = (json.id || json['@id'] || url.replace(/\/info\.json.*$/,'')).replace(/\/$/,''); return apply(it, url);
-      }
-      // glTF JSON / three.js JSON
-      if (json.asset?.version || json.metadata?.type === 'Object' || json.object) return apply(singleItem(name, url, 'model', { format: json.asset ? 'model/gltf+json' : 'application/vnd.threejs+json' }), url);
-      const p = parseManifest(json);
-      if (p.collection) return showCollection(p.items, url);
-      apply(p, url, json);
+      const rule = ruleFor(url);
+      if (rule && await tryDirect(rule)) { setUrlParam(rule); return; }
+      if (await tryDirect(url)) return;
+      setStatus('<span class="spinner"></span>페이지에서 IIIF 매니페스트를 찾는 중…');
+      await tryResolve(rule || url).catch(async e => { if (rule) return tryResolve(url); throw e; });
     } catch (e) {
-      setStatus('불러오기 실패: ' + e.message + ' (URL이 올바른지, 서버가 CORS를 허용하는지 확인하세요)', true);
+      setStatus('불러오기 실패: ' + e.message, true);
     }
   }
   function setUrlParam(url){ try { const u = new URL(location.href); if (url) u.searchParams.set('manifest', url); else u.searchParams.delete('manifest'); history.replaceState(null,'',u); } catch(e){} }
@@ -1004,6 +1082,17 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
   addEventListener('dragover', e => e.preventDefault());
   addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('dropHint').hidden = true; if (e.dataTransfer.files.length) openFiles(e.dataTransfer.files); else { const u = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain'); if (u) load(u.split('\n')[0]); } });
   $('manifestUrl').addEventListener('keydown', e => { if (e.key === 'Enter') load(e.target.value); });
+  // 붙여넣기만 하면 바로 열기 (입력창 안에서든, 페이지 아무 곳에서든)
+  const pastable = t => /^\s*(https?:\/\/|\{)/i.test(t);
+  $('manifestUrl').addEventListener('paste', e => {
+    const t = e.clipboardData?.getData('text') || '';
+    if (pastable(t)) { e.preventDefault(); load(t); }
+  });
+  document.addEventListener('paste', e => {
+    if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+    const t = e.clipboardData?.getData('text') || '';
+    if (pastable(t)) { e.preventDefault(); load(t); }
+  });
   $('samples').onclick = e => { const u = e.target.dataset?.url; if (u) load(u); };
   $('prevBtn').onclick = () => showCanvas(S.idx - 1);
   $('nextBtn').onclick = () => showCanvas(S.idx + 1);
