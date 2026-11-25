@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IIIF Viewer · LLM 메타데이터 번역</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  :root{
+    /* colors */
+    --primary:#0070d1;--primary-pressed:#0064b7;--primary-active:#004d8d;--on-primary:#fff;
+    --canvas-dark:#000;--surface-dark-elevated:#121314;--surface-dark-card:#181818;
+    --canvas-light:#fff;--surface-soft:#f3f3f3;--surface-card:#f5f7fa;--surface-filter:rgba(245,247,250,.3);
+    --hairline-light:#f3f3f3;--hairline-dark:rgba(229,229,229,.2);
+    --ink:#000;--body-light:rgba(0,0,0,.6);--mute-light:#6b6b6b;--ash-light:#ccc;
+    --on-dark:#fff;--body-dark:rgba(255,255,255,.7);--on-dark-mute:#ccc;--mute-dark:rgba(229,229,229,.55);
+    --warning:#c81b3a;--link-light:#0064b7;--link-dark:#53b1ff;
+    /* type */
+    --display:"Roboto","Source Sans Pro",Arial,Helvetica,sans-serif;
+    --text:"Inter","Apple SD Gothic Neo","Noto Sans KR",Arial,Helvetica,sans-serif;
+    /* spacing */
+    --xxs:4px;--xs:8px;--sm:12px;--md:16px;--lg:24px;--xl:32px;--xxl:48px;--section:96px;--gutter:48px;
+    /* radius */
+    --r-sm:4px;--r-md:8px;--r-lg:16px;--r-full:9999px;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  body{word-break:keep-all;overflow-wrap:anywhere;margin:0;font-family:var(--text);font-size:18px;line-height:1.5;letter-spacing:.1px;color:var(--ink);background:var(--canvas-dark)}
+  input,select,button{font:inherit;color:inherit}
+  a{color:var(--link-light);text-decoration:none}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 var(--gutter)}
+
+
+  html,body{height:100%;overflow:hidden}
+  .app{display:grid;grid-template-rows:64px 1fr 32px;height:100vh}
+  .credit{display:flex;align-items:center;justify-content:center;background:var(--primary);color:var(--on-primary);font-size:12px;font-weight:500;letter-spacing:.4px}
+  /* primary nav */
+  .nav{background:var(--canvas-dark);color:var(--on-dark);border-bottom:1px solid var(--hairline-dark);display:flex;align-items:center;gap:var(--lg);padding:0 var(--lg)}
+  .brand{font-family:var(--display);font-weight:300;font-size:22px;letter-spacing:.1px;white-space:nowrap}
+  .brand b{font-weight:300;color:var(--link-dark)}
+  .search{flex:1;display:flex;gap:var(--xs);max-width:860px}
+  .search-bar{flex:1;display:flex;align-items:center;gap:var(--sm);height:44px;padding:8px 20px;border-radius:var(--r-full);background:var(--canvas-light);color:var(--ink);border:2px solid transparent}
+  .search-bar:focus-within{border-color:var(--primary)}
+  .search-bar svg{flex-shrink:0;opacity:.55}
+  .search-bar input{flex:1;border:0;outline:0;background:transparent;font-size:16px;min-width:0}
+  .icon-btn{margin-left:auto;width:44px;height:44px;border-radius:var(--r-full);border:0;background:transparent;color:var(--on-dark);cursor:pointer;font-size:20px}
+  .icon-btn:active{background:rgba(255,255,255,.16)}
+
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--xs);height:48px;padding:12px 28px;border-radius:var(--r-full);border:1px solid transparent;font-size:18px;font-weight:700;letter-spacing:.45px;line-height:1.25;cursor:pointer;white-space:nowrap}
+  .btn-primary{background:var(--primary);color:var(--on-primary)}
+  .btn-primary:active{background:var(--primary-pressed);box-shadow:0 4px 12px rgba(0,0,0,.16)}
+  .btn-secondary-light{background:transparent;color:var(--ink);border-color:var(--ash-light)}
+  .btn:disabled{background:var(--surface-soft);color:var(--ash-light);border-color:transparent;cursor:default;box-shadow:none}
+  .btn-sm{height:44px;padding:8px 22px;font-size:14px;letter-spacing:.324px}
+
+  main{display:grid;grid-template-columns:1fr 440px;min-height:0}
+
+  /* viewer column (dark) */
+  .viewer-col{display:flex;flex-direction:column;min-width:0;min-height:0;background:linear-gradient(var(--surface-dark-elevated),var(--canvas-dark));color:var(--on-dark);padding:var(--lg);gap:var(--md)}
+  .stage{position:relative;flex:1;min-height:0;background:var(--canvas-dark);border-radius:var(--r-md);overflow:hidden}
+  #osd{position:absolute;inset:0}
+  #empty{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--md);text-align:center;padding:var(--xxl);background:var(--canvas-dark)}
+  .display-md{font-family:var(--display);font-weight:300;font-size:35px;line-height:1.25;margin:0}
+  #empty .display-md{color:var(--on-dark)}
+  #v3d{position:absolute;inset:0;background:var(--canvas-dark)}
+  #mediaBox{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--canvas-dark)}
+  #mediaBox video{max-width:100%;max-height:100%}
+  #mediaBox audio{width:min(560px,90%)}
+  #loading3d{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--xs);color:var(--on-dark-mute);font-size:16px;text-align:center;padding:var(--lg);pointer-events:none}
+  #loading3d small{color:var(--mute-dark);font-size:13px;max-width:520px;word-break:break-all}
+  #info3d{position:absolute;top:var(--md);right:var(--md);z-index:5;font-size:12px;font-weight:500;color:var(--on-dark-mute);background:rgba(0,0,0,.5);padding:4px 10px;border-radius:var(--r-full)}
+  #tools3d{position:absolute;left:50%;bottom:var(--md);transform:translateX(-50%);z-index:5;display:flex;gap:var(--xxs);padding:var(--xxs);border-radius:var(--r-full);background:rgba(18,19,20,.8);backdrop-filter:blur(8px);max-width:calc(100% - 2*var(--md));overflow-x:auto}
+  #tools3d button{height:36px;padding:6px 12px;border:0;border-radius:var(--r-full);background:transparent;color:var(--on-dark);font-size:13px;font-weight:700;letter-spacing:.324px;cursor:pointer;white-space:nowrap}
+  #tools3d button.on{background:var(--canvas-light);color:var(--ink)}
+  #tools3d button:active{background:rgba(255,255,255,.16)}
+  #dropHint{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(0,112,209,.85);color:var(--on-primary);border:2px dashed rgba(255,255,255,.7);border-radius:var(--r-md);pointer-events:none}
+  #empty .formats{font-size:13px;color:var(--mute-dark);max-width:560px}
+  .btn-secondary-dark{background:transparent;color:var(--on-dark);border-color:rgba(229,229,229,.35)}
+  .btn-secondary-dark:active{background:rgba(255,255,255,.16)}
+  .stage:fullscreen{border-radius:0}
+  .badge-3d{position:absolute;top:var(--md);left:var(--md);z-index:5}
+  #thumbs .t .ph3d{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:300;font-size:22px;color:var(--on-dark-mute);background:var(--surface-dark-card);padding:0}
+  #empty p{margin:0;color:var(--body-dark);font-size:16px;max-width:520px}
+  .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--xs);margin-top:var(--sm)}
+  .chip{height:40px;padding:8px 16px;border-radius:var(--r-full);border:1px solid var(--hairline-dark);background:rgba(255,255,255,.08);color:var(--on-dark);font-size:14px;font-weight:700;letter-spacing:.324px;cursor:pointer}
+  .chip:active{background:var(--canvas-light);color:var(--ink)}
+  .paddle{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:48px;height:48px;border-radius:var(--r-full);border:0;background:rgba(255,255,255,.16);color:var(--on-dark);font-size:22px;cursor:pointer;backdrop-filter:blur(6px)}
+  .paddle:active{background:rgba(255,255,255,.3)}
+  .paddle.prev{left:var(--md)} .paddle.next{right:var(--md)}
+  .caption-row{display:flex;align-items:baseline;justify-content:space-between;gap:var(--md)}
+  #canvasLabel{font-family:var(--display);font-weight:300;font-size:22px;letter-spacing:.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .counter{font-size:14px;color:var(--mute-dark);white-space:nowrap}
+  #thumbs{flex-shrink:0;display:grid;grid-auto-flow:column;grid-auto-columns:128px;gap:var(--sm);overflow-x:auto;padding:2px 2px var(--xs);scrollbar-width:thin;scrollbar-color:#333 transparent}
+  #thumbs .t{position:relative;aspect-ratio:16/9;border-radius:var(--r-md);overflow:hidden;background:var(--surface-dark-card);cursor:pointer;outline:2px solid transparent;outline-offset:1px}
+  #thumbs .t.active{outline-color:var(--on-dark)}
+  #thumbs .t img{width:100%;height:100%;object-fit:cover;display:block}
+  #thumbs .t div{position:absolute;left:0;right:0;bottom:0;padding:var(--md) var(--xs) var(--xxs);font-size:12px;font-weight:500;color:var(--on-dark);background:linear-gradient(transparent,rgba(0,0,0,.8));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* side panel (light) */
+  .panel{background:var(--canvas-light);color:var(--ink);display:flex;flex-direction:column;min-height:0}
+  .panel-head{padding:var(--lg);border-bottom:1px solid var(--hairline-light)}
+  .controls{display:flex;gap:var(--xs);align-items:center;flex-wrap:wrap}
+  .seg{display:flex;gap:var(--xxs)}
+  .seg button{height:40px;padding:8px 16px;border-radius:var(--r-full);border:1px solid var(--ash-light);background:var(--surface-filter);font-size:14px;font-weight:700;letter-spacing:.324px;cursor:pointer;color:var(--ink)}
+  .seg button.on{background:var(--ink);border-color:var(--ink);color:var(--on-dark)}
+  .select{height:40px;padding:8px 12px;border-radius:var(--r-sm);border:1px solid var(--ash-light);background:var(--canvas-light);font-size:14px;flex:1;min-width:0}
+  .select:focus{outline:0;border:2px solid var(--primary);padding:7px 11px}
+  .panel-head .btn{width:100%;margin-top:var(--md)}
+  .status{font-size:14px;color:var(--mute-light);margin-top:var(--sm);min-height:21px}
+  .status.err{color:var(--warning)}
+  .panel-body{flex:1;overflow-y:auto;padding:var(--lg)}
+  .note{font-size:12px;font-weight:500;color:var(--mute-light);padding:var(--sm) var(--lg);border-top:1px solid var(--hairline-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:1100px){.note{white-space:normal}}
+
+  #meta h2.title{font-family:var(--display);font-weight:300;font-size:28px;line-height:1.25;letter-spacing:.1px;margin:0}
+  #meta .summary{color:var(--body-light);font-size:16px;margin:var(--md) 0 0}
+  .badge{display:inline-flex;align-items:center;height:22px;padding:4px 10px;border-radius:var(--r-full);background:var(--primary);color:var(--on-primary);font-family:var(--text);font-size:12px;font-weight:500;letter-spacing:0;vertical-align:middle;margin-left:var(--xs)}
+  #meta .section{font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--mute-light);text-transform:uppercase;margin-top:var(--xl);padding-bottom:var(--xs);border-bottom:1px solid var(--ink)}
+  #meta dl{margin:0}
+  #meta dt{font-size:14px;font-weight:600;padding-top:var(--md);margin:0}
+  #meta dd{font-size:16px;margin:0;padding:var(--xxs) 0 var(--md);border-bottom:1px solid var(--hairline-light);word-break:break-word}
+  #meta .manifest-link{font-size:13px;word-break:break-all;display:inline-block;margin-top:var(--sm)}
+  #meta ul{padding:0;list-style:none;margin:var(--sm) 0 0}
+  #meta li a{display:flex;justify-content:space-between;padding:var(--md) 0;border-bottom:1px solid var(--hairline-light);color:var(--ink)}
+  #meta li a::after{content:"›";color:var(--mute-light)}
+  .placeholder{color:var(--mute-light);font-size:16px}
+
+  /* dialog */
+  dialog{border:0;border-radius:var(--r-lg);padding:var(--xl);width:min(520px,92vw);color:var(--ink)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog .display-md{font-size:28px;letter-spacing:.1px;margin-bottom:var(--sm)}
+  dialog label{display:block;font-size:14px;font-weight:600;margin:var(--md) 0 var(--xs)}
+  dialog .select{width:100%;height:48px;font-size:16px}
+  dialog input[type=text],dialog input[type=password]{width:100%;height:48px;padding:12px 16px;border-radius:var(--r-sm);border:1px solid var(--ash-light);font-size:16px}
+  dialog input:focus{outline:0;border:2px solid var(--primary);padding:11px 15px}
+  dialog .chk{display:flex;gap:var(--xs);align-items:center;font-weight:400}
+  dialog .row{display:flex;gap:var(--sm);justify-content:flex-end;margin-top:var(--xl)}
+  .hint{font-size:14px;color:var(--mute-light);margin-top:var(--md)}
+
+  .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--ash-light);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  @media (max-width:1024px){main{grid-template-columns:1fr 360px}}
+  @media (max-width:768px){
+    html,body{overflow:auto;height:auto}
+    .app{height:auto;grid-template-rows:auto auto 40px}
+    .nav{flex-wrap:wrap;padding:var(--sm) var(--md);gap:var(--sm)}
+    .search{order:3;flex-basis:100%}
+    main{grid-template-columns:1fr}
+    .viewer-col{height:70vh;padding:var(--md)}
+    .panel-body{overflow:visible}
+    .paddle{display:none}
+    #empty{padding:var(--lg)} #empty .display-md{font-size:28px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+<nav class="nav">
+  <span class="brand">IIIF <b>Viewer</b></span>
+  <div class="search">
+    <label class="search-bar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="manifestUrl" type="text" placeholder="IIIF Manifest 또는 3D, 이미지, 영상 파일 URL" aria-label="IIIF Manifest URL">
+    </label>
+    <button class="btn btn-primary btn-sm" id="loadBtn">불러오기</button>
+    <button class="btn btn-secondary-dark btn-sm" id="fileBtn" title="내 컴퓨터에서 파일 열기">파일 열기</button>
+    <input type="file" id="fileInput" multiple hidden>
+  </div>
+</nav>
+
+<main>
+  <section class="viewer-col">
+    <div class="stage" id="stage">
+      <div id="osd"></div>
+      <div id="v3d" hidden></div>
+      <div id="mediaBox" hidden></div>
+      <span class="badge badge-3d" id="badge3d" hidden>3D</span>
+      <div id="loading3d" hidden></div>
+      <span id="info3d" hidden></span>
+      <div id="tools3d" hidden>
+        <button data-a="fit" title="시점 초기화">⟲ 시점</button>
+        <button data-a="rotate" title="자동 회전">↻ 회전</button>
+        <button data-a="wire" title="와이어프레임">▦ 와이어</button>
+        <button data-a="up" title="Z-up / Y-up 축 전환">⇅ 축</button>
+        <button data-a="grid" title="바닥 격자">＃ 격자</button>
+        <button data-a="light" title="환경광 끄기/켜기">☀ 조명</button>
+        <button data-a="bg" title="배경색">◐ 배경</button>
+        <button data-a="shot" title="PNG로 저장">⤓ 캡처</button>
+        <button data-a="full" title="전체 화면">⛶</button>
+      </div>
+      <div id="dropHint" hidden><span class="display-md">여기에 놓으세요</span></div>
+      <div id="empty">
+        <h1 class="display-md">세계의 디지털 컬렉션을, 내 언어로.</h1>
+        <p>IIIF 매니페스트 URL이나 3D, 이미지, 영상 파일 URL을 넣거나 내 컴퓨터의 파일을 이 영역에 끌어다 놓으세요. 메타데이터는 LLM이 원하는 언어로 번역합니다.</p>
+        <p class="formats">3D: glTF, GLB, OBJ(+MTL), STL, PLY, FBX, DAE, 3MF, USDZ, 3DS, VRML, PCD, XYZ, VTK, AMF, 3DM, LWO, KMZ, VOX, DRC, PDB, G-code</p>
+        <div class="chips" id="samples">
+          <button class="chip" data-url="https://iiif.io/api/cookbook/recipe/0608-mvm-3d/v4/manifest.json">Cookbook, 3D 모델</button>
+          <button class="chip" data-url="https://iiif.harvardartmuseums.org/manifests/object/299843">Harvard Art Museums</button>
+          <button class="chip" data-url="https://iiif.io/api/cookbook/recipe/0001-mvm-image/manifest.json">Cookbook, 단일 이미지</button>
+          <button class="chip" data-url="https://iiif.io/api/cookbook/recipe/0006-text-language/manifest.json">Cookbook, 다국어</button>
+        </div>
+      </div>
+      <button class="paddle prev" id="prevBtn" aria-label="이전" hidden>‹</button>
+      <button class="paddle next" id="nextBtn" aria-label="다음" hidden>›</button>
+    </div>
+    <div class="caption-row" id="pager" hidden><span id="canvasLabel"></span></div>
+    <div id="thumbs" hidden></div>
+  </section>
+
+  <aside class="panel">
+    <div class="panel-head">
+      <div class="controls">
+        <div class="seg" id="viewSeg">
+          <button data-v="orig" class="on">원문</button>
+          <button data-v="trans">번역</button>
+        </div>
+        <select id="targetLang" class="select" aria-label="번역 언어">
+          <option value="Korean">한국어</option>
+          <option value="English">English</option>
+          <option value="Japanese">日本語</option>
+          <option value="Simplified Chinese">简体中文</option>
+          <option value="Traditional Chinese">繁體中文</option>
+          <option value="French">Français</option>
+          <option value="German">Deutsch</option>
+          <option value="Spanish">Español</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="translateBtn" disabled>LLM 번역</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="panel-body" id="meta"><p class="placeholder">매니페스트를 불러오면 제목, 설명, 메타데이터가 여기에 표시됩니다.</p></div>
+    <div class="note">AI 번역은 오류가 있을 수 있으니 원문과 함께 확인하세요.<br>이미지와 메타데이터의 권리는 각 제공 기관에 있습니다.</div>
+  </aside>
+</main>
+<footer class="credit">Made by Wonseok LEE</footer>
+</div>
+
+<script type="text/plain" id="v3d-src">
+// ===== 3D viewer (three.js) =====
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const CDN = 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/';
+const EXT = {
+  glb:'glb', gltf:'gltf', vrm:'glb', obj:'obj', stl:'stl', ply:'ply', fbx:'fbx', dae:'dae', '3mf':'3mf',
+  usdz:'usdz', usda:'usdz', usdc:'usdz', usd:'usdz', '3ds':'3ds', wrl:'wrl', vrml:'wrl', pcd:'pcd', xyz:'xyz', pts:'xyz', txt:'xyz',
+  vtk:'vtk', vtp:'vtk', amf:'amf', '3dm':'3dm', lwo:'lwo', kmz:'kmz', gcode:'gcode', gco:'gcode', nc:'gcode', vox:'vox', drc:'drc',
+  json:'json', pdb:'pdb', md2:'md2', e57:null, ifc:null
+};
+const MIME = [
+  [/gltf-binary|\bglb\b/i,'glb'], [/gltf/i,'gltf'], [/obj/i,'obj'], [/stl|sla/i,'stl'], [/ply/i,'ply'], [/fbx/i,'fbx'],
+  [/collada|\bdae\b/i,'dae'], [/3mf/i,'3mf'], [/usd/i,'usdz'], [/3ds/i,'3ds'], [/vrml|wrl/i,'wrl'], [/pcd/i,'pcd'],
+  [/xyz/i,'xyz'], [/vtk|vtp/i,'vtk'], [/amf/i,'amf'], [/3dm|rhino/i,'3dm'], [/lwo|lightwave/i,'lwo'], [/kmz/i,'kmz'],
+  [/gcode/i,'gcode'], [/vox/i,'vox'], [/draco|drc/i,'drc'], [/threejs/i,'json'], [/pdb|chemical/i,'pdb']
+];
+export const MODEL_EXTS = Object.keys(EXT).filter(k => EXT[k] && !['txt','json','nc'].includes(k));
+const Z_UP = new Set(['stl','3mf','amf','3dm','vox']);
+
+export function detectType(url = '', format = ''){
+  const clean = String(url).split(/[?#]/)[0].toLowerCase();
+  const ext = clean.includes('.') ? clean.slice(clean.lastIndexOf('.') + 1) : '';
+  if (EXT[ext] && ext !== 'txt' && ext !== 'json') return EXT[ext];
+  if (format) for (const [re, t] of MIME) if (re.test(format)) return t;
+  if (ext === 'json') return 'json';
+  return null;
+}
+
+function sniff(buf){
+  const b = new Uint8Array(buf, 0, Math.min(buf.byteLength, 512));
+  const head = new TextDecoder('latin1').decode(b);
+  if (head.startsWith('glTF')) return 'glb';
+  if (head.startsWith('ply')) return 'ply';
+  if (head.startsWith('Kaydara FBX') || head.startsWith('; FBX')) return 'fbx';
+  if (head.startsWith('VOX ')) return 'vox';
+  if (head.startsWith('DRACO')) return 'drc';
+  if (head.startsWith('PK')) return /\.model|3D\//.test(head) ? '3mf' : /usd/i.test(head) ? 'usdz' : /\.kml|\.dae/i.test(head) ? 'kmz' : '3mf';
+  if (head.startsWith('#VRML')) return 'wrl';
+  if (head.startsWith('# vtk') || /<VTKFile/.test(head)) return 'vtk';
+  if (/^# \.PCD|^VERSION|^FIELDS/m.test(head)) return 'pcd';
+  if (/<COLLADA/i.test(head)) return 'dae';
+  if (/<amf/i.test(head)) return 'amf';
+  if (/^\s*\{/.test(head)) return /"asset"\s*:/.test(head) ? 'gltf' : 'json';
+  if (/^solid\s/.test(head) && /facet/.test(new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 4000))))) return 'stl';
+  if (/^\s*(#|mtllib|o |v |g )/m.test(head) && /^v\s+-?\d/m.test(head)) return 'obj';
+  if (/^(G0|G1|M\d|;)/m.test(head)) return 'gcode';
+  if (/^\s*-?\d+(\.\d+)?([eE][-+]?\d+)?[\s,]+-?\d/.test(head)) return 'xyz';
+  if (buf.byteLength > 84) { const n = new DataView(buf).getUint32(80, true); if (84 + n * 50 === buf.byteLength) return 'stl'; }
+  return null;
+}
+
+// ---------- renderer singleton ----------
+let R = null;
+function setup(container){
+  if (R) { if (R.container !== container) container.append(R.renderer.domElement); return R; }
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;outline:none';
+  container.append(renderer.domElement);
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = env;
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.autoRotateSpeed = 1.2;
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6); scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(3, 5, 4); scene.add(dir);
+  const root = new THREE.Group(); scene.add(root);
+  const grid = new THREE.GridHelper(1, 20, 0x555555, 0x333333); grid.visible = false; scene.add(grid);
+  const clock = new THREE.Clock();
+  R = { container, renderer, scene, camera, controls, root, grid, env, clock, mixers: [], running: false, bg: 0, zup: false, wire: false };
+  new ResizeObserver(() => resize()).observe(container);
+  setBg(0);
+  return R;
+}
+function resize(){
+  const { container, renderer, camera } = R; const w = container.clientWidth, h = container.clientHeight;
+  if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+function loop(){
+  if (!R.running) return;
+  requestAnimationFrame(loop);
+  const dt = R.clock.getDelta(); R.mixers.forEach(m => m.update(dt));
+  R.controls.update(); R.renderer.render(R.scene, R.camera);
+}
+const BGS = [0x000000, 0x2a2b2e, 0xf3f3f3];
+function setBg(i){ R.bg = i % BGS.length; R.scene.background = new THREE.Color(BGS[R.bg]); }
+
+function disposeRoot(){
+  R.mixers = [];
+  R.root.traverse(o => {
+    o.geometry?.dispose?.();
+    arr(o.material).forEach(m => { for (const k in m) if (m[k]?.isTexture) m[k].dispose(); m.dispose?.(); });
+  });
+  R.root.clear(); R.root.rotation.set(0, 0, 0);
+}
+const arr = x => x == null ? [] : Array.isArray(x) ? x : [x];
+
+// ---------- fetching ----------
+async function fetchBuffer(url, onProgress){
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + url);
+  const total = +res.headers.get('content-length') || 0;
+  if (!res.body || !total) return { buf: await res.arrayBuffer(), ctype: res.headers.get('content-type') || '' };
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProgress?.(got / total); }
+  const out = new Uint8Array(got); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+  return { buf: out.buffer, ctype: res.headers.get('content-type') || '' };
+}
+
+const imp = p => import(CDN + p);
+const text = buf => new TextDecoder().decode(buf);
+
+function geomToObject(g, forcePoints){
+  if (!forcePoints && !g.attributes.normal) g.computeVertexNormals();
+  const vc = !!g.attributes.color;
+  if (forcePoints) {
+    g.computeBoundingBox(); const size = g.boundingBox.getSize(new THREE.Vector3()).length();
+    return new THREE.Points(g, new THREE.PointsMaterial({ size: size / 600, vertexColors: vc, color: vc ? 0xffffff : 0xcccccc, sizeAttenuation: true }));
+  }
+  return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: vc ? 0xffffff : 0xc8c8c8, vertexColors: vc, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide }));
+}
+
+async function parseModel(type, buf, url, manager){
+  const base = url.includes('/') ? url.slice(0, url.lastIndexOf('/') + 1) : '';
+  switch (type) {
+    case 'glb': case 'gltf': {
+      const { GLTFLoader } = await imp('loaders/GLTFLoader.js');
+      const { DRACOLoader } = await imp('loaders/DRACOLoader.js');
+      const { KTX2Loader } = await imp('loaders/KTX2Loader.js');
+      const { MeshoptDecoder } = await imp('libs/meshopt_decoder.module.js');
+      const draco = new DRACOLoader(manager).setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+      const ktx2 = new KTX2Loader(manager).setTranscoderPath(CDN + 'libs/basis/').detectSupport(R.renderer);
+      const g = await new GLTFLoader(manager).setDRACOLoader(draco).setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder).parseAsync(type === 'gltf' ? text(buf) : buf, base);
+      return { obj: g.scene, anims: g.animations };
+    }
+    case 'obj': {
+      const { OBJLoader } = await imp('loaders/OBJLoader.js');
+      const src = text(buf); const loader = new OBJLoader(manager);
+      const lib = src.match(/^mtllib\s+(.+?)\s*$/m); let hasMtl = false;
+      if (lib) try {
+        const { MTLLoader } = await imp('loaders/MTLLoader.js');
+        let rel; try { rel = new URL(lib[1], url).href; } catch (e) { rel = lib[1]; }
+        const mtlUrl = manager.resolveURL(rel);
+        const mats = await new MTLLoader(manager).setResourcePath(base).loadAsync(mtlUrl);
+        mats.preload(); loader.setMaterials(mats); hasMtl = true;
+      } catch (e) { console.warn('MTL load failed', e); }
+      const obj = loader.parse(src);
+      if (!hasMtl) obj.traverse(o => { if (o.isMesh) o.material = new THREE.MeshStandardMaterial({ color: 0xc8c8c8, roughness: .65, side: THREE.DoubleSide, vertexColors: !!o.geometry.attributes.color }); });
+      return { obj };
+    }
+    case 'stl': { const { STLLoader } = await imp('loaders/STLLoader.js'); const g = new STLLoader(manager).parse(buf); g.deleteAttribute('normal'); return { obj: geomToObject(g) }; }
+    case 'ply': {
+      const { PLYLoader } = await imp('loaders/PLYLoader.js'); const g = new PLYLoader(manager).parse(buf);
+      return { obj: geomToObject(g, g.index === null) };
+    }
+    case 'pcd': { const { PCDLoader } = await imp('loaders/PCDLoader.js'); const p = new PCDLoader(manager).parse(buf); return { obj: geomToObject(p.geometry, true) }; }
+    case 'xyz': {
+      // x y z [r g b] (공백/쉼표 구분)
+      const pos = [], col = []; let hasCol = false;
+      for (const line of text(buf).split(/\r?\n/)) {
+        const v = line.trim().split(/[\s,;]+/).map(Number); if (v.length < 3 || v.slice(0,3).some(isNaN)) continue;
+        pos.push(v[0], v[1], v[2]);
+        if (v.length >= 6 && !v.slice(3,6).some(isNaN)) { hasCol = true; const m = Math.max(v[3], v[4], v[5]) > 1 ? 255 : 1; col.push(v[3]/m, v[4]/m, v[5]/m); }
+        else if (v.length >= 7 && !v.slice(4,7).some(isNaN)) { hasCol = true; col.push(v[4]/255, v[5]/255, v[6]/255); }
+        else col.push(1,1,1);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      if (hasCol) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      return { obj: geomToObject(g, true) };
+    }
+    case 'vtk': { const { VTKLoader } = await imp('loaders/VTKLoader.js'); const g = new VTKLoader(manager).parse(buf); return { obj: geomToObject(g, !g.index && g.attributes.position.count % 3 !== 0) }; }
+    case 'fbx': { const { FBXLoader } = await imp('loaders/FBXLoader.js'); const o = new FBXLoader(manager).parse(buf, base); return { obj: o, anims: o.animations }; }
+    case 'dae': { const { ColladaLoader } = await imp('loaders/ColladaLoader.js'); const c = new ColladaLoader(manager).parse(text(buf), base); return { obj: c.scene, anims: c.scene.animations }; }
+    case 'kmz': { const { KMZLoader } = await imp('loaders/KMZLoader.js'); return { obj: new KMZLoader(manager).parse(buf).scene }; }
+    case '3mf': { const { ThreeMFLoader } = await imp('loaders/3MFLoader.js'); return { obj: new ThreeMFLoader(manager).parse(buf) }; }
+    case 'amf': { const { AMFLoader } = await imp('loaders/AMFLoader.js'); return { obj: new AMFLoader(manager).parse(buf) }; }
+    case 'usdz': { const { USDZLoader } = await imp('loaders/USDZLoader.js'); return { obj: new USDZLoader(manager).parse(buf) }; }
+    case '3ds': { const { TDSLoader } = await imp('loaders/TDSLoader.js'); return { obj: new TDSLoader(manager).parse(buf, base) }; }
+    case 'wrl': { const { VRMLLoader } = await imp('loaders/VRMLLoader.js'); return { obj: new VRMLLoader(manager).parse(text(buf), base) }; }
+    case 'lwo': { const { LWOLoader } = await imp('loaders/LWOLoader.js'); const r = new LWOLoader(manager).parse(buf, base, url.split('/').pop()); const g = new THREE.Group(); r.meshes.forEach(m => g.add(m)); return { obj: g, anims: r.animations }; }
+    case 'gcode': { const { GCodeLoader } = await imp('loaders/GCodeLoader.js'); return { obj: new GCodeLoader(manager).parse(text(buf)) }; }
+    case 'vox': {
+      const { VOXLoader, VOXMesh } = await imp('loaders/VOXLoader.js'); const g = new THREE.Group();
+      new VOXLoader(manager).parse(buf).forEach(ch => g.add(new VOXMesh(ch))); return { obj: g };
+    }
+    case 'pdb': {
+      const { PDBLoader } = await imp('loaders/PDBLoader.js'); const pdb = new PDBLoader(manager).parse(text(buf));
+      const g = new THREE.Group(); const sphere = new THREE.IcosahedronGeometry(0.35, 2);
+      const pos = pdb.geometryAtoms.attributes.position, col = pdb.geometryAtoms.attributes.color;
+      const inst = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ roughness: .4 }), pos.count);
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < pos.count; i++) { m.makeTranslation(pos.getX(i), pos.getY(i), pos.getZ(i)); inst.setMatrixAt(i, m); inst.setColorAt(i, new THREE.Color(col.getX(i), col.getY(i), col.getZ(i))); }
+      g.add(inst);
+      g.add(new THREE.LineSegments(pdb.geometryBonds, new THREE.LineBasicMaterial({ color: 0x999999 })));
+      return { obj: g };
+    }
+    case 'md2': { const { MD2Loader } = await imp('loaders/MD2Loader.js'); return { obj: geomToObject(new MD2Loader(manager).parse(buf)) }; }
+    case 'drc': {
+      const { DRACOLoader } = await imp('loaders/DRACOLoader.js');
+      const d = new DRACOLoader(manager).setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+      const g = await new Promise((res, rej) => d.parse(buf, res, rej)); return { obj: geomToObject(g, !g.index) };
+    }
+    case '3dm': {
+      const { Rhino3dmLoader } = await imp('loaders/3DMLoader.js');
+      const l = new Rhino3dmLoader(manager).setLibraryPath('https://cdn.jsdelivr.net/npm/rhino3dm@8.4.0/');
+      return { obj: await new Promise((res, rej) => l.parse(buf, res, rej)) };
+    }
+    case 'json': {
+      const j = JSON.parse(text(buf));
+      if (j.asset?.version) return parseModel('gltf', buf, url, manager);
+      const o = await new THREE.ObjectLoader(manager).parseAsync(j);
+      return { obj: o, anims: o.animations };
+    }
+  }
+  throw new Error('지원하지 않는 3D 형식입니다' + (type ? ` (${type})` : ''));
+}
+
+function applyIIIF(obj, e){
+  // IIIF 3D 초안: SpecificResource.transform (Scale/Rotate/Translate), target PointSelector
+  for (const t of arr(e.transforms)) {
+    const x = +t.x || 0, y = +t.y || 0, z = +t.z || 0; const type = t.type || '';
+    if (/Scale/i.test(type)) obj.scale.multiply(new THREE.Vector3(t.x ?? 1, t.y ?? 1, t.z ?? 1));
+    else if (/Rotate/i.test(type)) { const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(x), THREE.MathUtils.degToRad(y), THREE.MathUtils.degToRad(z))); obj.quaternion.premultiply(q); }
+    else if (/Translate/i.test(type)) obj.position.add(new THREE.Vector3(x, y, z));
+  }
+  if (e.position) obj.position.add(new THREE.Vector3(+e.position.x || 0, +e.position.y || 0, +e.position.z || 0));
+}
+
+function stats(){
+  let v = 0, f = 0, pts = 0;
+  R.root.traverse(o => {
+    const g = o.geometry; if (!g?.attributes?.position) return;
+    const n = g.attributes.position.count * (o.isInstancedMesh ? o.count : 1);
+    if (o.isPoints) pts += n; else { v += n; f += (g.index ? g.index.count : n) / 3 * (o.isInstancedMesh ? o.count : 1); }
+  });
+  return { v, f: Math.round(f), pts };
+}
+
+export function fit(){
+  R.root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(R.root);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+  const r = size.length() / 2 || 1;
+  const d = r / Math.sin(THREE.MathUtils.degToRad(R.camera.fov / 2)) * 1.05;
+  R.camera.near = d / 1000; R.camera.far = d * 100; R.camera.updateProjectionMatrix();
+  R.camera.position.copy(center).add(new THREE.Vector3(0.6, 0.45, 1).normalize().multiplyScalar(d));
+  R.controls.target.copy(center); R.controls.update();
+  R.grid.scale.setScalar(r * 4); R.grid.position.set(center.x, box.min.y, center.z);
+}
+
+let token = 0;
+/**
+ * entries: [{url, format, file (File), transforms, position, label}]
+ * opts: {files: Map(name->File), bg, onProgress(text), onInfo(text)}
+ */
+export async function show(container, entries, opts = {}){
+  setup(container); resize();
+  const my = ++token;
+  disposeRoot();
+  R.running = true; R.clock.getDelta(); loop();
+  const blobs = new Map();
+  for (const [name, file] of (opts.files || new Map())) blobs.set(name.toLowerCase(), URL.createObjectURL(file));
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(u => {
+    if (!blobs.size || u.startsWith('blob:') || u.startsWith('data:')) return u;
+    const name = decodeURIComponent(u.split(/[?#]/)[0].split(/[\\/]/).pop()).toLowerCase();
+    return blobs.get(name) || u;
+  });
+  const types = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const label = entries.length > 1 ? ` (${i + 1}/${entries.length})` : '';
+    opts.onProgress?.(`3D 모델 불러오는 중${label}…`);
+    let buf, url = e.url;
+    if (e.file) { buf = await e.file.arrayBuffer(); url = e.file.name; }
+    else ({ buf } = await fetchBuffer(url, p => opts.onProgress?.(`3D 모델 내려받는 중${label}… ${Math.round(p * 100)}%`)));
+    if (my !== token) return;
+    let type = detectType(e.file ? e.file.name : url, e.format) || sniff(buf);
+    if (type === 'json' || type === 'gltf') { const s = sniff(buf); if (s === 'glb') type = 'glb'; }
+    opts.onProgress?.(`3D 모델 해석 중${label}…`);
+    const { obj, anims } = await parseModel(type, buf, url, manager);
+    if (my !== token) { return; }
+    applyIIIF(obj, e);
+    if (anims?.length) { const mx = new THREE.AnimationMixer(obj); anims.forEach(a => mx.clipAction(a).play()); R.mixers.push(mx); }
+    R.root.add(obj); types.push(type);
+  }
+  R.zup = types.length > 0 && types.every(t => Z_UP.has(t)) && !entries.some(e => e.transforms?.length);
+  R.root.rotation.x = R.zup ? -Math.PI / 2 : 0;
+  if (opts.bg) R.scene.background = new THREE.Color(opts.bg); else setBg(R.bg);
+  setWire(R.wire);
+  fit();
+  const s = stats();
+  const fmt = n => n.toLocaleString();
+  opts.onInfo?.([...new Set(types)].map(t => t.toUpperCase()).join(' + ') + (s.f ? ` · 면 ${fmt(s.f)}` : '') + (s.v ? ` · 정점 ${fmt(s.v)}` : '') + (s.pts ? ` · 점 ${fmt(s.pts)}` : '') + (R.mixers.length ? ' · 애니메이션' : ''));
+}
+
+export function hide(){ if (R) { R.running = false; token++; disposeRoot(); R.renderer.clear(); } }
+export function toggleRotate(){ R.controls.autoRotate = !R.controls.autoRotate; return R.controls.autoRotate; }
+export function setWire(on){ R.wire = on; R.root.traverse(o => arr(o.material).forEach(m => { if ('wireframe' in m) m.wireframe = on; })); return on; }
+export function toggleWire(){ return setWire(!R.wire); }
+export function toggleUp(){ R.zup = !R.zup; R.root.rotation.x = R.zup ? -Math.PI / 2 : 0; fit(); return R.zup; }
+export function cycleBg(){ setBg(R.bg + 1); return R.bg; }
+export function toggleGrid(){ R.grid.visible = !R.grid.visible; return R.grid.visible; }
+export function toggleLight(){ R.scene.environment = R.scene.environment ? null : R.env; return !!R.scene.environment; }
+export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.renderer.domElement.toDataURL('image/png'); }
+</script>
+
+<script>
+(() => {
+  // ---------- state ----------
+  const S = { manifest:null, version:3, canvases:[], idx:0, orig:null, trans:{}, view:'orig', viewer:null };
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+    set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} },
+    del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+  };
+  // ---------- helpers ----------
+  const arr = x => x == null ? [] : Array.isArray(x) ? x : [x];
+  const idOf = o => o ? (typeof o === 'string' ? o : (o.id || o['@id'])) : null;
+  const stripHtml = s => {
+    if (!/[<&]/.test(s)) return s;
+    const d = new DOMParser().parseFromString(s, 'text/html');
+    d.querySelectorAll('br,p,li').forEach(n => n.append('\n'));
+    return d.body.textContent.replace(/\n{3,}/g,'\n\n').trim();
+  };
+  const prefLangs = () => [ (navigator.language||'en').slice(0,2), 'ko', 'en', 'none', '@none' ];
+
+  // Normalize v2 / v3 language values -> {lang: [strings]}
+  function langMap(v){
+    const out = {};
+    const add = (l, s) => { if (s == null || s === '') return; (out[l||'none'] ||= []).push(stripHtml(String(s))); };
+    if (v == null) return out;
+    if (typeof v === 'string' || typeof v === 'number') { add('none', v); return out; }
+    if (Array.isArray(v)) { v.forEach(x => { const m = langMap(x); for (const k in m) m[k].forEach(s => add(k, s)); }); return out; }
+    if (typeof v === 'object') {
+      if ('@value' in v) { add(v['@language'] || 'none', v['@value']); return out; }
+      for (const k in v) arr(v[k]).forEach(s => add(k, s));
+    }
+    return out;
+  }
+  // pick strings in best language
+  function pick(v){
+    const m = langMap(v); const keys = Object.keys(m);
+    if (!keys.length) return '';
+    for (const l of prefLangs()) if (m[l]) return m[l].join('\n');
+    return m[keys[0]].join('\n');
+  }
+
+  // ---------- manifest parsing ----------
+  const MODEL_EXT = /\.(glb|gltf|vrm|obj|stl|ply|fbx|dae|3mf|usdz|usda|usdc|usd|3ds|wrl|vrml|pcd|xyz|pts|vtk|vtp|amf|3dm|lwo|kmz|gcode|gco|vox|drc|pdb|md2)([?#]|$)/i;
+  const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg|tiff?)([?#]|$)/i;
+  const VIDEO_EXT = /\.(mp4|webm|ogv|mov|m4v|m3u8)([?#]|$)/i;
+  const AUDIO_EXT = /\.(mp3|ogg|oga|wav|m4a|aac|flac|opus)([?#]|$)/i;
+  function kindOf(b){
+    const t = b?.type || b?.['@type'] || '', f = b?.format || '', u = idOf(b) || '';
+    if (/Model|PhysicalObject/i.test(t) || /^model\/|threejs|vnd\.ms-pki\.stl|sla|x-ply|ply|fbx|collada|usd|chemical\/x-pdb/i.test(f) || MODEL_EXT.test(u)) return 'model';
+    if (/Video|MovingImage/i.test(t) || /^video\//i.test(f) || VIDEO_EXT.test(u)) return 'video';
+    if (/Sound|Audio/i.test(t) || /^audio\//i.test(f) || AUDIO_EXT.test(u)) return 'audio';
+    if (/Image/i.test(t) || /^image\//i.test(f) || IMAGE_EXT.test(u) || arr(b?.service).length) return 'image';
+    return null;
+  }
+  // unwrap Choice / SpecificResource → [{res, transforms}]
+  function unwrap(body){
+    const out = [];
+    for (let b of arr(body)) {
+      if (!b) continue;
+      if (/Choice/i.test(b.type || b['@type'] || '')) { const it = b.default || arr(b.items || b.item)[0]; if (it) out.push(...unwrap(it)); continue; }
+      if (/SpecificResource/i.test(b.type || b['@type'] || '') && b.source) {
+        const src = typeof b.source === 'string' ? { id: b.source } : b.source;
+        out.push({ res: src, transforms: arr(b.transform) }); continue;
+      }
+      out.push({ res: b, transforms: [] });
+    }
+    return out;
+  }
+  function pointOf(target){
+    for (const t of arr(target)) { const m = String(idOf(t) || '').match(/#xyz=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)/); if (m) return { x: +m[1], y: +m[2], z: +m[3] }; }
+    for (const t of arr(target)) for (const sel of arr(t?.selector)) if (/PointSelector/i.test(sel?.type || '')) return { x: sel.x, y: sel.y, z: sel.z };
+    return null;
+  }
+  function makeItem(label, opts){ return { label, kind: 'image', svc: null, img: null, thumb: null, models: [], media: null, ...opts }; }
+  function imgFields(b){
+    const svcId = idOf(arr(b.service)[0])?.replace(/\/info\.json$/,'').replace(/\/$/,'') || null;
+    return { svc: svcId, img: idOf(b) };
+  }
+
+  function parseManifest(m){
+    const ctx = JSON.stringify(m['@context']||'');
+    const v = ctx.includes('presentation/4') ? 4 : ctx.includes('presentation/3') ? 3 : (m['@type'] || ctx.includes('presentation/2')) ? 2 : 3;
+    const type = m.type || m['@type'] || '';
+    if (/Collection/i.test(type)) return { collection: true, v, items: arr(m.items || m.manifests || m.members || m.collections).filter(x => /Manifest|Collection/i.test(x.type||x['@type']||'')).map(x => ({ id: idOf(x), label: pick(x.label) })) };
+
+    const items = [];
+    if (v >= 3) {
+      arr(m.items).forEach((c, i) => {
+        const it = makeItem(pick(c.label) || String(i+1), { container: c.type || 'Canvas', bg: c.backgroundColor || null });
+        for (const page of arr(c.items)) for (const anno of arr(page.items)) {
+          if (anno.motivation && !arr(anno.motivation).some(x => /painting/i.test(x))) continue;
+          for (const { res, transforms } of unwrap(anno.body)) {
+            const k = kindOf(res);
+            if (k === 'model') it.models.push({ url: idOf(res), format: res.format || '', transforms, position: pointOf(anno.target), label: pick(res.label) });
+            else if ((k === 'video' || k === 'audio') && !it.media) it.media = { kind: k, url: idOf(res), format: res.format || '' };
+            else if (k === 'image' && !it.img) Object.assign(it, imgFields(res));
+          }
+        }
+        // 캔버스에 3D가 없으면 rendering 의 3D 파일을 사용
+        if (!it.models.length && !it.img && !it.media) for (const r of arr(c.rendering)) if (kindOf(r) === 'model') it.models.push({ url: idOf(r), format: r.format || '' });
+        it.kind = it.models.length ? 'model' : it.media ? it.media.kind : 'image';
+        it.thumb = idOf(arr(c.thumbnail)[0]) || (it.kind === 'image' ? (it.svc ? it.svc + '/full/!200,200/0/default.jpg' : it.img) : null);
+        if (it.img || it.models.length || it.media) items.push(it);
+      });
+    } else {
+      arr(m.sequences?.[0]?.canvases).forEach((c, i) => {
+        const r = arr(c.images)[0]?.resource; if (!r) return;
+        const b = /Choice/i.test(r['@type'] || '') ? (r.default || arr(r.item)[0]) : r;
+        const it = makeItem(pick(c.label) || String(i+1), imgFields(b));
+        const k = kindOf(b); if (k === 'model') { it.kind = 'model'; it.models.push({ url: idOf(b), format: b.format || '' }); }
+        it.thumb = idOf(arr(c.thumbnail)[0]) || (it.kind === 'image' ? (it.svc ? it.svc + '/full/200,/0/default.jpg' : it.img) : null);
+        items.push(it);
+      });
+      // Universal Viewer 방식: mediaSequences (3D · 영상 · 음성 · PDF 등)
+      for (const seq of arr(m.mediaSequences)) for (const el of arr(seq.elements)) {
+        const k = kindOf(el); if (!k || k === 'image') continue;
+        const it = makeItem(pick(el.label) || pick(m.label) || el['@type'], { kind: k, thumb: idOf(arr(el.thumbnail)[0]) });
+        if (k === 'model') it.models.push({ url: idOf(el), format: el.format || '' }); else it.media = { kind: k, url: idOf(el), format: el.format || '' };
+        items.push(it);
+      }
+    }
+    // 매니페스트 수준 rendering 에 3D 파일이 있으면 별도 항목으로 추가
+    for (const r of arr(m.rendering)) if (kindOf(r) === 'model' && !items.some(it => it.models.some(x => x.url === idOf(r))))
+      items.push(makeItem(pick(r.label) || '3D', { kind: 'model', models: [{ url: idOf(r), format: r.format || '' }] }));
+
+    const metadata = arr(m.metadata).map(p => ({ label: pick(p.label), value: pick(p.value) }));
+    const reqStmt = v >= 3 ? m.requiredStatement : (m.attribution ? { label: 'Attribution', value: m.attribution } : null);
+    const orig = {
+      label: pick(m.label),
+      summary: pick(v >= 3 ? m.summary : m.description),
+      metadata,
+      requiredStatement: reqStmt ? { label: pick(reqStmt.label) || 'Attribution', value: pick(reqStmt.value) } : null,
+      rights: m.rights || m.license || '',
+      homepage: idOf(arr(m.homepage)[0]) || idOf(arr(m.related)[0]) || '',
+      canvasLabels: items.map(c => c.label)
+    };
+    return { v, canvases: items, orig };
+  }
+
+  // 매니페스트가 아닌 단일 파일(3D · 이미지 · 영상)을 바로 열기
+  function singleItem(name, url, kind, extra = {}){
+    const it = makeItem(name, { kind, ...extra });
+    if (kind === 'model') it.models.push({ url, format: extra.format || '', file: extra.file });
+    else if (kind === 'image') it.img = url;
+    else it.media = { kind, url };
+    return {
+      v: '-', canvases: [it],
+      orig: { label: name, summary: '', metadata: [{ label: 'Source', value: extra.source || url }], requiredStatement: null, rights: '', homepage: '', canvasLabels: [name] }
+    };
+  }
+
+  // ---------- loading ----------
+  function apply(p, url, json){
+    Object.assign(S, { manifest: json || null, version: p.v, canvases: p.canvases, orig: p.orig, trans: {}, idx: 0, view: 'orig', url: url || '', files: p.files || null });
+    buildThumbs(); setView('orig');
+    showCanvas(0);
+    $('translateBtn').disabled = false;
+    const n = k => p.canvases.filter(c => c.kind === k).length;
+    const parts = [['image','이미지'],['model','3D 모델'],['video','영상'],['audio','음성']].filter(([k]) => n(k)).map(([k,l]) => `${l} ${n(k)}개`);
+    setStatus((p.v === '-' ? '파일' : `IIIF Presentation v${p.v}`) + (parts.length ? ' · ' + parts.join(' · ') : ' · 표시할 콘텐츠 없음'));
+  }
+
+  async function load(url, fromQuery){
+    url = (url||'').trim(); if (!url) return;
+    $('manifestUrl').value = url;
+    setUrlParam(url);
+    const name = decodeURIComponent(url.split(/[?#]/)[0].split('/').pop() || url);
+    if (MODEL_EXT.test(url)) return apply(singleItem(name, url, 'model'), url);
+    if (VIDEO_EXT.test(url)) return apply(singleItem(name, url, 'video'), url);
+    if (AUDIO_EXT.test(url)) return apply(singleItem(name, url, 'audio'), url);
+    if (IMAGE_EXT.test(url)) return apply(singleItem(name, url, 'image'), url);
+    setStatus('<span class="spinner"></span>불러오는 중…');
+    try {
+      const res = await fetch(url, { headers:{ Accept:'application/ld+json, application/json;q=0.9, */*;q=0.5' } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const ctype = res.headers.get('content-type') || '';
+      if (/^model\/|octet-stream|sla|ply/i.test(ctype)) return apply(singleItem(name, url, 'model', { format: ctype }), url);
+      if (/^image\//i.test(ctype)) return apply(singleItem(name, url, 'image'), url);
+      if (/^video\//i.test(ctype)) return apply(singleItem(name, url, 'video'), url);
+      if (/^audio\//i.test(ctype)) return apply(singleItem(name, url, 'audio'), url);
+      const txt = await res.text();
+      let json; try { json = JSON.parse(txt); } catch (e) { return apply(singleItem(name, url, 'model', { format: ctype }), url); }
+      // IIIF Image API info.json
+      if (/image\/[23]|iiif\.io\/api\/image/.test(JSON.stringify(json['@context']||'')) || (json.protocol || '').includes('iiif.io/api/image')) {
+        const it = singleItem(name, url, 'image'); it.canvases[0].svc = (json.id || json['@id'] || url.replace(/\/info\.json.*$/,'')).replace(/\/$/,''); return apply(it, url);
+      }
+      // glTF JSON / three.js JSON
+      if (json.asset?.version || json.metadata?.type === 'Object' || json.object) return apply(singleItem(name, url, 'model', { format: json.asset ? 'model/gltf+json' : 'application/vnd.threejs+json' }), url);
+      const p = parseManifest(json);
+      if (p.collection) return showCollection(p.items, url);
+      apply(p, url, json);
+    } catch (e) {
+      setStatus('불러오기 실패: ' + e.message + ' (URL이 올바른지, 서버가 CORS를 허용하는지 확인하세요)', true);
+    }
+  }
+  function setUrlParam(url){ try { const u = new URL(location.href); if (url) u.searchParams.set('manifest', url); else u.searchParams.delete('manifest'); history.replaceState(null,'',u); } catch(e){} }
+
+  // 내 컴퓨터의 파일 열기 (드래그 앤 드롭 / 파일 선택) — OBJ+MTL+텍스처처럼 여러 파일을 함께 넣을 수 있음
+  const MAIN_ORDER = ['glb','gltf','vrm','fbx','obj','dae','usdz','3mf','3dm','stl','ply','wrl','3ds','lwo','kmz','vtk','vtp','amf','pcd','xyz','pts','vox','drc','pdb','md2','gcode','gco','usda','usdc','usd'];
+  async function openFiles(list){
+    const files = [...list]; if (!files.length) return;
+    const ext = f => f.name.split('.').pop().toLowerCase();
+    const manifestFile = files.find(f => ext(f) === 'json');
+    if (manifestFile) {
+      try {
+        const json = JSON.parse(await manifestFile.text());
+        if (!json.asset && !json.metadata?.type) { const p = parseManifest(json); if (p.collection) return showCollection(p.items, ''); setUrlParam(''); return apply(p, '', json); }
+      } catch (e) { return setStatus('JSON을 읽지 못했습니다: ' + e.message, true); }
+    }
+    const map = new Map(files.map(f => [f.name, f]));
+    const mains = files.filter(f => MAIN_ORDER.includes(ext(f))).sort((a,b) => MAIN_ORDER.indexOf(ext(a)) - MAIN_ORDER.indexOf(ext(b)));
+    setUrlParam(''); $('manifestUrl').value = '';
+    if (mains.length) {
+      // 여러 모델 파일을 넣으면 각각 하나의 항목으로
+      const canvases = mains.map(f => singleItem(f.name, f.name, 'model', { file: f, source: '내 컴퓨터' }).canvases[0]);
+      const label = canvases.length === 1 ? files.find(f => f === mains[0]).name : `${canvases.length}개 파일`;
+      return apply({ v: '-', canvases, files: map, orig: { label, summary: '', metadata: [{ label: 'Source', value: '내 컴퓨터 (' + files.map(f => f.name).join(', ') + ')' }], requiredStatement: null, rights: '', homepage: '', canvasLabels: canvases.map(c => c.label) } }, '');
+    }
+    const media = files.filter(f => /^(image|video|audio)\//.test(f.type));
+    if (media.length) {
+      const canvases = media.map(f => { const k = f.type.split('/')[0]; const u = URL.createObjectURL(f); return singleItem(f.name, u, k).canvases[0]; });
+      canvases.forEach(c => { if (c.kind === 'image') c.thumb = c.img; });
+      return apply({ v: '-', canvases, orig: { label: media.length === 1 ? media[0].name : `${media.length}개 파일`, summary: '', metadata: [{ label: 'Source', value: '내 컴퓨터' }], requiredStatement: null, rights: '', homepage: '', canvasLabels: canvases.map(c => c.label) } }, '');
+    }
+    setStatus('열 수 있는 파일이 없습니다: ' + files.map(f => f.name).join(', '), true);
+  }
+
+  function showCollection(items, url){
+    S.orig = null; $('translateBtn').disabled = true;
+    $('meta').innerHTML = '<div class="section">컬렉션 — 매니페스트를 선택하세요</div>';
+    const ul = document.createElement('ul');
+    items.forEach(it => { const li = document.createElement('li'); const a = document.createElement('a'); a.href = '#'; a.textContent = it.label || it.id; a.onclick = e => { e.preventDefault(); load(it.id); }; li.append(a); ul.append(li); });
+    $('meta').append(ul);
+    setStatus(`컬렉션 · 항목 ${items.length}개`);
+  }
+
+  // three.js 3D 모듈 (필요할 때만 불러옴)
+  let v3dP = null;
+  const getV3D = () => v3dP ||= import(URL.createObjectURL(new Blob([$('v3d-src').textContent], { type: 'text/javascript' })));
+
+  function initViewer(){
+    if (S.viewer) return;
+    $('empty').hidden = true;
+    S.viewer = OpenSeadragon({
+      element: $('osd'),
+      prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
+      showNavigator: true, navigatorPosition: 'BOTTOM_RIGHT',
+      crossOriginPolicy: 'Anonymous', gestureSettingsMouse: { clickToZoom: false }
+    });
+  }
+
+  function setMode(kind){
+    $('osd').style.visibility = kind === 'image' ? '' : 'hidden';
+    $('v3d').hidden = kind !== 'model'; $('tools3d').hidden = kind !== 'model';
+    $('badge3d').hidden = kind !== 'model';
+    $('mediaBox').hidden = !(kind === 'video' || kind === 'audio');
+    $('loading3d').hidden = true; $('info3d').hidden = true;
+    if (kind !== 'model' && v3dP) getV3D().then(m => m.hide());
+    if (kind !== 'video' && kind !== 'audio') $('mediaBox').innerHTML = '';
+    if (kind !== 'image') S.viewer?.close();
+  }
+
+  async function showCanvas(i){
+    if (!S.canvases.length) return;
+    S.idx = Math.max(0, Math.min(i, S.canvases.length-1));
+    const c = S.canvases[S.idx];
+    initViewer(); setMode(c.kind);
+    if (c.kind === 'image') S.viewer.open(c.svc ? c.svc + '/info.json' : { type:'image', url: c.img });
+    else if (c.kind === 'video' || c.kind === 'audio') {
+      const el = document.createElement(c.kind); el.controls = true; el.src = c.media.url; el.crossOrigin = 'anonymous';
+      if (/m3u8/i.test(c.media.url) && !el.canPlayType('application/vnd.apple.mpegurl')) {
+        try { const { default: Hls } = await import('https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.mjs'); const h = new Hls(); h.loadSource(c.media.url); h.attachMedia(el); el.removeAttribute('src'); } catch (e) {}
+      }
+      $('mediaBox').append(el);
+    } else if (c.kind === 'model') {
+      const L = $('loading3d'); L.hidden = false; L.textContent = '3D 뷰어 준비 중…';
+      const my = S.idx;
+      try {
+        const V = await getV3D();
+        await V.show($('v3d'), c.models, {
+          files: S.files, bg: c.bg,
+          onProgress: t => { if (S.idx === my) L.textContent = t; },
+          onInfo: t => { if (S.idx === my) { $('info3d').textContent = t; $('info3d').hidden = false; } }
+        });
+        if (S.idx === my) L.hidden = true;
+      } catch (e) {
+        console.error(e);
+        if (S.idx === my) { L.hidden = false; L.innerHTML = ''; L.append('3D 모델을 열지 못했습니다', document.createElement('br')); const s = document.createElement('small'); s.textContent = e.message; L.append(s); }
+      }
+    }
+    $('pager').hidden = false;
+    updateCanvasLabel();
+    document.querySelectorAll('.paddle').forEach(p => p.hidden = S.canvases.length < 2);
+    document.querySelectorAll('#thumbs .t').forEach((t,k) => t.classList.toggle('active', k === S.idx));
+    document.querySelector('#thumbs .t.active')?.scrollIntoView({ block:'nearest', inline:'center' });
+  }
+  function updateCanvasLabel(){
+    const tr = S.view === 'trans' && S.trans[$('targetLang').value];
+    const lbl = (tr && tr.canvasLabels?.[S.idx]) || S.canvases[S.idx]?.label || '';
+    $('canvasLabel').innerHTML = ''; $('canvasLabel').append(lbl); const c = document.createElement('span'); c.className = 'counter'; c.textContent = `${S.idx+1} / ${S.canvases.length}`; $('pager').querySelector('.counter')?.remove(); $('pager').append(c);
+    document.querySelectorAll('#thumbs .t div').forEach((d,k) => d.textContent = (tr && tr.canvasLabels?.[k]) || S.canvases[k]?.label || '');
+  }
+
+  function buildThumbs(){
+    const box = $('thumbs'); box.innerHTML = '';
+    box.hidden = S.canvases.length < 2;
+    S.canvases.forEach((c,k) => {
+      const t = document.createElement('div'); t.className = 't';
+      const d = document.createElement('div'); d.textContent = c.label;
+      if (c.thumb) { const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.src = c.thumb; t.append(img); }
+      else { const ph = document.createElement('span'); ph.className = 'ph3d'; ph.textContent = { model: '3D', video: '▶', audio: '♪' }[c.kind] || '·'; t.append(ph); }
+      t.append(d); t.onclick = () => showCanvas(k); box.append(t);
+    });
+  }
+
+  // 3D 도구 막대
+  $('tools3d').onclick = async e => {
+    const b = e.target.closest('button'); if (!b) return; const V = await getV3D();
+    const a = b.dataset.a;
+    if (a === 'fit') V.fit();
+    else if (a === 'rotate') b.classList.toggle('on', V.toggleRotate());
+    else if (a === 'wire') b.classList.toggle('on', V.toggleWire());
+    else if (a === 'up') b.classList.toggle('on', V.toggleUp());
+    else if (a === 'grid') b.classList.toggle('on', V.toggleGrid());
+    else if (a === 'light') b.classList.toggle('on', !V.toggleLight());
+    else if (a === 'bg') V.cycleBg();
+    else if (a === 'shot') { const l = document.createElement('a'); l.href = V.snapshot(); l.download = (S.canvases[S.idx]?.label || 'model') + '.png'; l.click(); }
+    else if (a === 'full') { const st = $('stage'); document.fullscreenElement ? document.exitFullscreen() : st.requestFullscreen?.(); }
+  };
+
+  // ---------- metadata rendering ----------
+  function linkify(el, text){
+    const parts = String(text).split(/(https?:\/\/[^\s<>"]+)/g);
+    parts.forEach((p,i) => {
+      if (i % 2) { const a = document.createElement('a'); a.href = p; a.target = '_blank'; a.rel = 'noopener'; a.textContent = p; el.append(a); }
+      else el.append(document.createTextNode(p));
+    });
+    el.style.whiteSpace = 'pre-line';
+  }
+
+  function renderMeta(){
+    const box = $('meta'); box.innerHTML = '';
+    if (!S.orig) return;
+    const lang = $('targetLang').value;
+    const tr = S.view === 'trans' ? S.trans[lang] : null;
+    const d = tr ? { ...S.orig, ...tr, rights: S.orig.rights, homepage: S.orig.homepage } : S.orig;
+    if (S.view === 'trans' && !tr) { setStatus('아직 번역되지 않았습니다. “LLM 번역” 버튼을 누르세요.'); }
+
+    const h = document.createElement('h2'); h.className = 'title'; h.textContent = d.label || '(제목 없음)';
+    if (tr) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'AI 번역'; h.append(b); }
+    box.append(h);
+    if (d.summary) { const s = document.createElement('div'); s.className = 'summary'; linkify(s, d.summary); box.append(s); }
+
+    if (d.metadata?.length) {
+      const sec = document.createElement('div'); sec.className = 'section'; sec.textContent = tr ? '메타데이터' : 'Metadata'; box.append(sec);
+      const dl = document.createElement('dl');
+      d.metadata.forEach(p => {
+        const dt = document.createElement('dt'); dt.textContent = p.label;
+        const dd = document.createElement('dd'); linkify(dd, p.value);
+        dl.append(dt, dd);
+      });
+      box.append(dl);
+    }
+    if (d.requiredStatement?.value || d.rights || d.homepage) {
+      const sec = document.createElement('div'); sec.className = 'section'; sec.textContent = tr ? '출처 · 권리' : 'Attribution & Rights'; box.append(sec);
+      const dl = document.createElement('dl');
+      const row = (l, v) => { const dt = document.createElement('dt'); dt.textContent = l; const dd = document.createElement('dd'); linkify(dd, v); dl.append(dt, dd); };
+      if (d.requiredStatement?.value) row(d.requiredStatement.label, d.requiredStatement.value);
+      if (d.rights) row('Rights', d.rights);
+      if (d.homepage) row('Homepage', d.homepage);
+      box.append(dl);
+    }
+    const sec = document.createElement('div'); sec.className = 'section'; sec.textContent = 'Manifest';
+    box.append(sec);
+    const a = document.createElement('a'); a.href = S.url; a.target = '_blank'; a.rel='noopener'; a.textContent = S.url; a.className = 'manifest-link';
+    box.append(a);
+  }
+
+  // ---------- LLM translation ----------
+  // 번역 API 주소: 같은 도메인(Vercel)에 배포하면 그대로 두세요.
+  // 화면을 GitHub Pages에, 서버를 Vercel에 따로 올렸다면 전체 주소로 바꾸세요. 예: 'https://my-app.vercel.app/api/translate'
+  const TRANSLATE_API = window.TRANSLATE_API || '/api/translate';
+
+  async function callTranslate(lang, payload){
+    const r = await fetch(TRANSLATE_API, { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ lang, payload }) });
+    let j; try { j = await r.json(); } catch (e) { throw new Error('번역 서버 응답을 읽지 못했습니다 (HTTP ' + r.status + ')'); }
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j;
+  }
+
+  async function translate(){
+    if (!S.orig) return;
+    const lang = $('targetLang').value;
+    if (S.trans[lang]) { setView('trans'); return; }
+    const payload = {
+      label: S.orig.label, summary: S.orig.summary, metadata: S.orig.metadata,
+      requiredStatement: S.orig.requiredStatement,
+      canvasLabels: S.orig.canvasLabels.length <= 300 ? S.orig.canvasLabels : []
+    };
+    $('translateBtn').disabled = true;
+    setStatus(`<span class="spinner"></span>${lang}로 번역 중…`);
+    try {
+      const out = await callTranslate(lang, payload);
+      if (!out.canvasLabels?.length) out.canvasLabels = S.orig.canvasLabels;
+      S.trans[lang] = out;
+      setView('trans');
+      setStatus(`${lang} 번역 완료`);
+    } catch (e) {
+      setStatus('번역 실패: ' + e.message, true);
+    } finally { $('translateBtn').disabled = false; }
+  }
+
+  // ---------- UI wiring ----------
+  function setStatus(html, err){ document.querySelectorAll('.status').forEach(s => { s.innerHTML = html; s.classList.toggle('err', !!err); }); }
+  function setView(v){
+    S.view = v;
+    document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    renderMeta(); if (S.canvases.length) updateCanvasLabel();
+  }
+
+  $('loadBtn').onclick = () => load($('manifestUrl').value);
+  $('fileBtn').onclick = () => $('fileInput').click();
+  $('fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
+  let dragN = 0;
+  addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) { dragN++; $('dropHint').hidden = false; } });
+  addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('dropHint').hidden = true; } });
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('dropHint').hidden = true; if (e.dataTransfer.files.length) openFiles(e.dataTransfer.files); else { const u = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain'); if (u) load(u.split('\n')[0]); } });
+  $('manifestUrl').addEventListener('keydown', e => { if (e.key === 'Enter') load(e.target.value); });
+  $('samples').onclick = e => { const u = e.target.dataset?.url; if (u) load(u); };
+  $('prevBtn').onclick = () => showCanvas(S.idx - 1);
+  $('nextBtn').onclick = () => showCanvas(S.idx + 1);
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input,textarea,select')) return;
+    if (e.key === 'ArrowLeft') showCanvas(S.idx - 1);
+    if (e.key === 'ArrowRight') showCanvas(S.idx + 1);
+  });
+  $('viewSeg').onclick = e => { const v = e.target.dataset?.v; if (!v) return; setView(v); if (v === 'trans' && S.orig && !S.trans[$('targetLang').value]) setStatus('아직 번역되지 않았습니다. “LLM 번역” 버튼을 누르세요.'); };
+  $('targetLang').onchange = () => { if (S.view === 'trans') renderMeta(), S.canvases.length && updateCanvasLabel(); };
+  $('translateBtn').onclick = translate;
+
+  // expose for testing
+  window.__iiif = { parseManifest, langMap, pick, load, openFiles, S };
+
+  // initial load from ?manifest=
+  const q = new URLSearchParams(location.search).get('manifest') || new URLSearchParams(location.search).get('iiif-content');
+  if (q) load(q, true);
+})();
+</script>
+</body>
+</html>
