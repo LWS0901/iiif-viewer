@@ -804,6 +804,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     [/e-codices\.unifr\.ch\/(?:[a-z]{2}\/)?(?:list\/one\/)?([a-z]+)\/([a-z0-9_.-]+)/i, m => `https://www.e-codices.unifr.ch/metadata/iiif/${m[1]}-${m[2]}/manifest.json`],
   ];
   const API_BASE = (window.TRANSLATE_API || '/api/translate').replace(/\/translate$/, '');
+  const viaProxy = u => `${API_BASE}/resolve?img=${encodeURIComponent(u)}`;
 
   // 뷰어 링크(Mirador, UV, 이 뷰어 등)에 들어 있는 manifest= 값 꺼내기
   function manifestParam(u){
@@ -997,6 +998,9 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       if (c.img) add({ type:'image', url: https(c.img) });
       if (c.svc) { add({ type:'image', url: https(c.svc) + '/full/max/0/default.jpg' }); add({ type:'image', url: https(c.svc) + '/full/full/0/default.jpg' }); }
       if (c.thumb) add({ type:'image', url: https(c.thumb) });
+      // 마지막 수단: 서버를 거쳐 이미지 가져오기 (기관 서버가 브라우저 접속을 막는 경우)
+      if (c.svc) add({ type:'image', url: viaProxy(https(c.svc) + '/full/!2000,2000/0/default.jpg') });
+      if (c.img) add({ type:'image', url: viaProxy(https(c.img)) });
       S.imgQueue = { idx: S.idx, list, done: false };
       const L = $('loading3d'); L.hidden = false; L.textContent = '이미지 불러오는 중…';
       S.viewer.open(list.shift());
@@ -1059,6 +1063,8 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       if (c.svc) srcs.push(https2(c.svc) + '/info.json');
       if (c.img) srcs.push({ type: 'image', url: https2(c.img) });
       if (c.thumb) srcs.push({ type: 'image', url: https2(c.thumb) });
+      if (c.svc) srcs.push({ type: 'image', url: viaProxy(https2(c.svc) + '/full/!2000,2000/0/default.jpg') });
+      if (c.img) srcs.push({ type: 'image', url: viaProxy(https2(c.img)) });
       const tryAdd = () => {
         const src = srcs.shift(); if (!src || token !== S.stitchToken) return;
         const r = S.stitchRects[k];
@@ -1099,7 +1105,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     S.canvases.forEach((c,k) => {
       const t = document.createElement('div'); t.className = 't';
       const d = document.createElement('div'); d.textContent = c.label;
-      if (c.thumb) { const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.draggable = false; img.src = c.thumb; t.append(img); }
+      if (c.thumb) { const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.draggable = false; img.src = c.thumb; img.onerror = () => { if (!img.dataset.p) { img.dataset.p = 1; img.src = viaProxy(c.thumb); } }; t.append(img); }
       else { const ph = document.createElement('span'); ph.className = 'ph3d'; ph.textContent = { model: '3D', video: '▶', audio: '♪' }[c.kind] || '·'; t.append(ph); }
       t.append(d); t.onclick = () => showCanvas(k); box.append(t);
     });
