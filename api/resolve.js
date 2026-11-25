@@ -111,6 +111,30 @@ module.exports = async function handler(req, res) {
     } catch (e) { return res.status(502).json({ error: e.message }); }
   }
 
+  // IIIF 이미지 정보(info.json) 대신 가져오기
+  const info = String(req.query?.info || '');
+  if (info) {
+    try {
+      const r = await get(info.replace(/\/$/, '') + '/info.json', 15000);
+      let j; try { j = JSON.parse(r.text); } catch (e) {}
+      if (r.status >= 400 || !j || !(j.width && j.height)) return res.status(502).json({ error: `이미지 정보를 가져오지 못했습니다 (HTTP ${r.status})` });
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+      return res.status(200).json(j);
+    } catch (e) { return res.status(502).json({ error: e.message }); }
+  }
+  // IIIF 타일 대신 가져오기: /영역/크기/회전/화질.형식 형태의 경로만 허용
+  const tile = String(req.query?.tile || ''), tp = String(req.query?.p || '');
+  if (tile) {
+    if (!/^\/[\w,.:!%-]+\/[\w,.!^%-]+\/!?\d+(\.\d+)?\/[a-z]+\.(jpg|jpeg|png|webp|gif)$/i.test(tp)) return res.status(400).json({ error: '잘못된 타일 경로입니다' });
+    try {
+      const r = await get(tile.replace(/\/$/, '') + tp, 20000);
+      if (r.status >= 400 || !/^image\//i.test(r.ctype)) return res.status(502).json({ error: `타일을 가져오지 못했습니다 (HTTP ${r.status})` });
+      res.setHeader('Content-Type', r.ctype);
+      res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, immutable');
+      return res.status(200).send(r.buf);
+    } catch (e) { return res.status(502).json({ error: e.message }); }
+  }
+
   const target = String(req.query?.url || '');
   if (!target) return res.status(400).json({ error: 'url 값이 필요합니다' });
 
