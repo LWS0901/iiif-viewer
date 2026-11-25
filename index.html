@@ -96,6 +96,9 @@
   .caption-row{display:flex;align-items:baseline;justify-content:space-between;gap:var(--md)}
   #canvasLabel{font-family:var(--display);font-weight:300;font-size:22px;letter-spacing:.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .counter{font-size:14px;color:var(--mute-dark);white-space:nowrap}
+  .pager-right{display:flex;align-items:center;gap:var(--sm);flex-shrink:0}
+  .mini-btn{height:32px;padding:4px 14px;border-radius:var(--r-full);border:1px solid var(--hairline-dark);background:rgba(255,255,255,.08);color:var(--on-dark);font-size:13px;font-weight:700;letter-spacing:.324px;cursor:pointer}
+  .mini-btn.on{background:var(--canvas-light);color:var(--ink);border-color:var(--canvas-light)}
   #thumbs{flex-shrink:0;display:grid;grid-auto-flow:column;grid-auto-columns:128px;gap:var(--sm);overflow-x:auto;padding:2px 2px var(--xs);scrollbar-width:thin;scrollbar-color:#333 transparent}
   #thumbs .t{position:relative;aspect-ratio:16/9;border-radius:var(--r-md);overflow:hidden;background:var(--surface-dark-card);cursor:pointer;outline:2px solid transparent;outline-offset:1px}
   #thumbs .t.active{outline-color:var(--on-dark)}
@@ -129,6 +132,10 @@
   #meta ul{padding:0;list-style:none;margin:var(--sm) 0 0}
   #meta li a{display:flex;justify-content:space-between;padding:var(--md) 0;border-bottom:1px solid var(--hairline-light);color:var(--ink)}
   #meta li a::after{content:"›";color:var(--mute-light)}
+  #meta ul.toc{margin:0}
+  #meta ul.toc li a{padding:var(--sm) 0;font-size:15px}
+  #meta ul.toc li a::after{content:none}
+  #meta .toc-pg{margin-left:auto;padding-left:var(--md);font-size:12px;color:var(--mute-light)}
   .placeholder{color:var(--mute-light);font-size:16px}
 
   /* dialog */
@@ -210,7 +217,7 @@
       <button class="paddle prev" id="prevBtn" aria-label="이전" hidden>‹</button>
       <button class="paddle next" id="nextBtn" aria-label="다음" hidden>›</button>
     </div>
-    <div class="caption-row" id="pager" hidden><span id="canvasLabel"></span></div>
+    <div class="caption-row" id="pager" hidden><span id="canvasLabel"></span><span class="pager-right"><button class="mini-btn" id="stitchBtn" hidden title="모든 이미지를 이어 붙여 한 화면에 보기">이어보기</button></span></div>
     <div id="thumbs" hidden></div>
   </section>
 
@@ -630,6 +637,60 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     for (const t of arr(target)) for (const sel of arr(t?.selector)) if (/PointSelector/i.test(sel?.type || '')) return { x: sel.x, y: sel.y, z: sel.z };
     return null;
   }
+  // ---------- 목차 (IIIF structures / ranges) ----------
+  function parseToc(m, items){
+    const strip = u => String(u || '').split('#')[0];
+    const canvasIdx = new Map(items.map((it, i) => [strip(it.id), i]));
+    const all = arr(m.structures); if (!all.length) return [];
+    const byId = new Map(all.map(r => [idOf(r), r]));
+    const seen = new Set();
+    function node(r, depth){
+      if (!r || depth > 8) return null;
+      const rid = idOf(r); if (rid && seen.has(rid) && depth > 0) return null; if (rid) seen.add(rid);
+      const n = { label: pick(r.label), idx: -1, children: [] };
+      const take = i => { if (i >= 0 && (n.idx < 0 || i < n.idx)) n.idx = i; };
+      // v3: items 안에 Canvas / Range / SpecificResource
+      for (const x of arr(r.items)) {
+        const t = x.type || x['@type'] || '';
+        if (/Range/i.test(t)) { const c = node(byId.get(idOf(x)) || x, depth + 1); if (c) { n.children.push(c); take(c.idx); } }
+        else { const id = /SpecificResource/i.test(t) ? idOf(x.source) : idOf(x); const i = canvasIdx.get(strip(id)); if (i !== undefined) take(i); }
+      }
+      // v2: canvases / ranges / members
+      for (const c of arr(r.canvases)) { const i = canvasIdx.get(strip(idOf(c))); if (i !== undefined) take(i); }
+      for (const sub of [...arr(r.ranges), ...arr(r.members).filter(x => /Range/i.test(x['@type'] || x.type || ''))]) {
+        const c = node(byId.get(idOf(sub)) || (typeof sub === 'object' ? sub : null), depth + 1); if (c) { n.children.push(c); take(c.idx); }
+      }
+      for (const c of arr(r.members).filter(x => /Canvas/i.test(x['@type'] || x.type || ''))) { const i = canvasIdx.get(strip(idOf(c))); if (i !== undefined) take(i); }
+      if (!n.label && !n.children.length) return null;
+      return n;
+    }
+    // 최상위: v3는 structures 전부, v2는 다른 range에 포함되지 않은 것 (또는 viewingHint top)
+    const childIds = new Set(); all.forEach(r => [...arr(r.ranges), ...arr(r.members), ...arr(r.items)].forEach(x => { const t = x?.['@type'] || x?.type || 'Range'; if (/Range/i.test(t) || typeof x === 'string') childIds.add(idOf(x)); }));
+    const tops = all.filter(r => /top/i.test(String(r.viewingHint || r.behavior || '')) || !childIds.has(idOf(r)));
+    let roots = (tops.length ? tops : all).map(r => node(r, 0)).filter(Boolean);
+    if (roots.length === 1 && roots[0].children.length && (!roots[0].label || /^(table of contents|contents|목차|toc)$/i.test(roots[0].label))) roots = roots[0].children;
+    return roots;
+  }
+  function flatToc(nodes, out = []){ for (const n of nodes || []) { out.push(n); flatToc(n.children, out); } return out; }
+  function renderToc(box, tr){
+    if (!S.toc?.length) return;
+    const flat = flatToc(S.toc); const names = tr?.tocLabels;
+    const sec = document.createElement('div'); sec.className = 'section'; sec.textContent = tr ? '목차' : 'Contents'; box.append(sec);
+    const build = (nodes, depth) => {
+      const ul = document.createElement('ul'); ul.className = 'toc';
+      for (const n of nodes) {
+        const li = document.createElement('li');
+        const a = document.createElement('a'); a.href = '#'; a.style.paddingLeft = (depth * 16) + 'px';
+        a.textContent = (names && names[flat.indexOf(n)]) || n.label || '(제목 없음)';
+        if (n.idx >= 0) { const pg = document.createElement('span'); pg.className = 'toc-pg'; pg.textContent = n.idx + 1; a.append(pg); a.onclick = e => { e.preventDefault(); showCanvas(n.idx); }; }
+        else a.onclick = e => e.preventDefault();
+        li.append(a); if (n.children.length) li.append(build(n.children, depth + 1)); ul.append(li);
+      }
+      return ul;
+    };
+    box.append(build(S.toc, 0));
+  }
+
   function makeItem(label, opts){ return { label, kind: 'image', svc: null, img: null, thumb: null, models: [], media: null, ...opts }; }
   function imgFields(b){
     const svcId = idOf(arr(b.service)[0])?.replace(/\/info\.json$/,'').replace(/\/$/,'') || null;
@@ -645,7 +706,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     const items = [];
     if (v >= 3) {
       arr(m.items).forEach((c, i) => {
-        const it = makeItem(pick(c.label) || String(i+1), { container: c.type || 'Canvas', bg: c.backgroundColor || null });
+        const it = makeItem(pick(c.label) || String(i+1), { id: idOf(c), container: c.type || 'Canvas', bg: c.backgroundColor || null, w: +c.width || 0, h: +c.height || 0 });
         for (const page of arr(c.items)) for (const anno of arr(page.items)) {
           if (anno.motivation && !arr(anno.motivation).some(x => /painting/i.test(x))) continue;
           for (const { res, transforms } of unwrap(anno.body)) {
@@ -665,7 +726,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       arr(m.sequences?.[0]?.canvases).forEach((c, i) => {
         const r = arr(c.images)[0]?.resource; if (!r) return;
         const b = /Choice/i.test(r['@type'] || '') ? (r.default || arr(r.item)[0]) : r;
-        const it = makeItem(pick(c.label) || String(i+1), imgFields(b));
+        const it = makeItem(pick(c.label) || String(i+1), { ...imgFields(b), id: idOf(c), w: +c.width || 0, h: +c.height || 0 });
         const k = kindOf(b); if (k === 'model') { it.kind = 'model'; it.models.push({ url: idOf(b), format: b.format || '' }); }
         it.thumb = idOf(arr(c.thumbnail)[0]) || (it.kind === 'image' ? (it.svc ? it.svc + '/full/200,/0/default.jpg' : it.img) : null);
         items.push(it);
@@ -693,7 +754,12 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       homepage: idOf(arr(m.homepage)[0]) || idOf(arr(m.related)[0]) || '',
       canvasLabels: items.map(c => c.label)
     };
-    return { v, canvases: items, orig };
+    const seq = m.sequences?.[0] || {};
+    const hints = [...arr(m.behavior), ...arr(m.viewingHint), ...arr(seq.viewingHint), ...arr(seq.behavior)].map(String);
+    const layout = { continuous: hints.some(h => /continuous/i.test(h)), dir: m.viewingDirection || seq.viewingDirection || 'left-to-right' };
+    const toc = parseToc(m, items);
+    orig.tocLabels = flatToc(toc).map(n => n.label);
+    return { v, canvases: items, orig, layout, toc };
   }
 
   // 매니페스트가 아닌 단일 파일(3D · 이미지 · 영상)을 바로 열기
@@ -710,7 +776,10 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
 
   // ---------- loading ----------
   function apply(p, url, json){
-    Object.assign(S, { manifest: json || null, version: p.v, canvases: p.canvases, orig: p.orig, trans: {}, idx: 0, view: 'orig', url: url || '', files: p.files || null });
+    const imgs = p.canvases.length > 1 && p.canvases.every(c => c.kind === 'image');
+    Object.assign(S, { manifest: json || null, version: p.v, canvases: p.canvases, orig: p.orig, trans: {}, idx: 0, view: 'orig', url: url || '', files: p.files || null,
+      toc: p.toc || [], layout: p.layout || { continuous: false, dir: 'left-to-right' }, stitch: imgs && !!p.layout?.continuous, stitchOk: imgs, stitchBuilt: false });
+    syncStitchBtn();
     buildThumbs(); setView('orig');
     showCanvas(0);
     $('translateBtn').disabled = false;
@@ -883,13 +952,19 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
       showNavigator: true, navigatorPosition: 'BOTTOM_RIGHT',
       crossOriginPolicy: false, gestureSettingsMouse: { clickToZoom: false },
-      maxZoomPixelRatio: 6, zoomPerScroll: 1.3, visibilityRatio: 0.5, imageSmoothingEnabled: true
+      maxZoomPixelRatio: 6, timeout: 120000, zoomPerScroll: 1.3, visibilityRatio: 0.5, imageSmoothingEnabled: true
     });
+    ['canvas-drag', 'canvas-scroll', 'canvas-pinch'].forEach(ev => S.viewer.addHandler(ev, () => { S.userMoved = true; }));
     // 타일 방식이 실패하면 다음 방법으로 자동 전환
+    // OpenSeadragon 기본 영어 오류 문구는 숨기고 직접 안내
+    S.viewer._showMessage = () => {};
+    const L = () => $('loading3d');
+    S.viewer.addHandler('open', () => { if (S.imgQueue) { S.imgQueue.done = true; L().hidden = true; } });
+    S.viewer.addHandler('tile-loaded', () => { if (S.imgQueue) L().hidden = true; });
     S.viewer.addHandler('open-failed', () => {
-      const q = S.imgQueue; if (!q || !q.list.length || q.idx !== S.idx) return;
-      const next = q.list.shift(); S.viewer.open(next);
-      if (!q.list.length) S.viewer.addOnceHandler('open-failed', () => { if (q.idx === S.idx) setStatus('이미지를 불러오지 못했습니다. 제공 기관 서버가 외부 접근을 막고 있을 수 있어요.', true); });
+      const q = S.imgQueue; if (!q || q.done || q.idx !== S.idx) return;
+      if (q.list.length) { const next = q.list.shift(); setTimeout(() => { if (S.imgQueue === q && !q.done) S.viewer.open(next); }, 0); return; }
+      L().hidden = false; L().textContent = '이미지를 불러오지 못했습니다. 제공 기관 서버가 응답하지 않거나 외부 접근을 막고 있을 수 있어요.';
     });
   }
 
@@ -909,7 +984,11 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     S.idx = Math.max(0, Math.min(i, S.canvases.length-1));
     const c = S.canvases[S.idx];
     initViewer(); setMode(c.kind);
-    if (c.kind === 'image') {
+    if (c.kind === 'image' && S.stitch && S.stitchOk) {
+      if (!S.stitchBuilt) buildStitch(); else focusStitch(S.idx);
+    }
+    else if (c.kind === 'image') {
+      S.stitchBuilt = false;
       // 1) IIIF 이미지 서비스(타일)  2) 원본 이미지 주소  3) 서비스의 전체 이미지  4) 썸네일
       const https = u => (location.protocol === 'https:' && u) ? u.replace(/^http:\/\//, 'https://') : u;
       const seen = new Set(), list = [];
@@ -918,7 +997,8 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       if (c.img) add({ type:'image', url: https(c.img) });
       if (c.svc) { add({ type:'image', url: https(c.svc) + '/full/max/0/default.jpg' }); add({ type:'image', url: https(c.svc) + '/full/full/0/default.jpg' }); }
       if (c.thumb) add({ type:'image', url: https(c.thumb) });
-      S.imgQueue = { idx: S.idx, list };
+      S.imgQueue = { idx: S.idx, list, done: false };
+      const L = $('loading3d'); L.hidden = false; L.textContent = '이미지 불러오는 중…';
       S.viewer.open(list.shift());
     }
     else if (c.kind === 'video' || c.kind === 'audio') {
@@ -949,10 +1029,67 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     document.querySelectorAll('#thumbs .t').forEach((t,k) => t.classList.toggle('active', k === S.idx));
     document.querySelector('#thumbs .t.active')?.scrollIntoView({ block:'nearest', inline:'center' });
   }
+  // ---------- 이어보기: 여러 장을 한 화면에 이어 붙이기 ----------
+  const https2 = u => (location.protocol === 'https:' && u) ? u.replace(/^http:\/\//, 'https://') : u;
+  function buildStitch(){
+    const v = S.viewer; S.imgQueue = null; v.world.removeAll();
+    const token = S.stitchToken = (S.stitchToken || 0) + 1;
+    S.stitchBuilt = true; S.stitchItems = []; S.userMoved = false;
+    const dir = String(S.layout.dir || 'left-to-right');
+    const vertical = /top-to-bottom|bottom-to-top/.test(dir), rtl = /right-to-left/.test(dir);
+    const gap = S.layout.continuous ? 0 : 0.03;
+    // 각 이미지의 비율(가로/세로). 크기 정보가 없으면 1:1로 두고 불러온 뒤 다시 배치
+    const ratio = c => (c.w && c.h) ? c.w / c.h : 1;
+    const place = () => {
+      let pos = 0; const n = S.canvases.length;
+      const order = [...Array(n).keys()]; if (rtl || /bottom-to-top/.test(dir)) order.reverse();
+      for (const k of order) {
+        const it = S.stitchItems[k], r = S.ratios[k];
+        const w = vertical ? 1 : r, h = vertical ? 1 / r : 1;
+        if (it) { it.setPosition(new OpenSeadragon.Point(vertical ? 0 : pos, vertical ? pos : 0), true); it.setWidth(w, true); }
+        S.stitchRects[k] = { x: vertical ? 0 : pos, y: vertical ? pos : 0, w, h };
+        pos += (vertical ? h : w) + gap;
+      }
+      if (!S.userMoved) v.viewport.goHome(true);
+    };
+    S.ratios = S.canvases.map(ratio); S.stitchRects = [];
+    place();
+    S.canvases.forEach((c, k) => {
+      const srcs = [];
+      if (c.svc) srcs.push(https2(c.svc) + '/info.json');
+      if (c.img) srcs.push({ type: 'image', url: https2(c.img) });
+      if (c.thumb) srcs.push({ type: 'image', url: https2(c.thumb) });
+      const tryAdd = () => {
+        const src = srcs.shift(); if (!src || token !== S.stitchToken) return;
+        const r = S.stitchRects[k];
+        v.addTiledImage({ tileSource: src, x: r.x, y: r.y, width: r.w, index: Math.min(k, v.world.getItemCount()),
+          success: e => {
+            if (token !== S.stitchToken) return v.world.removeItem(e.item);
+            S.stitchItems[k] = e.item;
+            if (!S.userMoved) v.viewport.goHome(true);
+            const sz = e.item.source.dimensions; const real = sz ? sz.x / sz.y : 1;
+            if (Math.abs(real - S.ratios[k]) > 0.01) { S.ratios[k] = real; place(); }
+          },
+          error: tryAdd });
+      };
+      tryAdd();
+    });
+  }
+  function focusStitch(k){
+    const r = S.stitchRects?.[k]; if (!r) return;
+    S.userMoved = true;
+    S.viewer.viewport.fitBounds(new OpenSeadragon.Rect(r.x, r.y, r.w, r.h));
+  }
+  function syncStitchBtn(){
+    const b = $('stitchBtn'); b.hidden = !S.stitchOk;
+    b.classList.toggle('on', !!S.stitch); b.textContent = S.stitch ? '한 장씩 보기' : '이어보기';
+  }
+  $('stitchBtn').onclick = () => { S.stitch = !S.stitch; S.stitchBuilt = false; syncStitchBtn(); showCanvas(S.idx); if (S.stitch) setTimeout(() => S.viewer.viewport.goHome(), 50); };
+
   function updateCanvasLabel(){
     const tr = S.view === 'trans' && S.trans[$('targetLang').value];
     const lbl = (tr && tr.canvasLabels?.[S.idx]) || S.canvases[S.idx]?.label || '';
-    $('canvasLabel').innerHTML = ''; $('canvasLabel').append(lbl); const c = document.createElement('span'); c.className = 'counter'; c.textContent = `${S.idx+1} / ${S.canvases.length}`; $('pager').querySelector('.counter')?.remove(); $('pager').append(c);
+    $('canvasLabel').innerHTML = ''; $('canvasLabel').append(lbl); const c = document.createElement('span'); c.className = 'counter'; c.textContent = `${S.idx+1} / ${S.canvases.length}`; $('pager').querySelector('.counter')?.remove(); $('pager').querySelector('.pager-right').prepend(c); if (S.stitch && S.stitchOk) c.textContent = `${S.canvases.length}장 이어보기 · ${S.idx+1}번째`;
     document.querySelectorAll('#thumbs .t div').forEach((d,k) => d.textContent = (tr && tr.canvasLabels?.[k]) || S.canvases[k]?.label || '');
   }
 
@@ -962,7 +1099,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     S.canvases.forEach((c,k) => {
       const t = document.createElement('div'); t.className = 't';
       const d = document.createElement('div'); d.textContent = c.label;
-      if (c.thumb) { const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.src = c.thumb; t.append(img); }
+      if (c.thumb) { const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.draggable = false; img.src = c.thumb; t.append(img); }
       else { const ph = document.createElement('span'); ph.className = 'ph3d'; ph.textContent = { model: '3D', video: '▶', audio: '♪' }[c.kind] || '·'; t.append(ph); }
       t.append(d); t.onclick = () => showCanvas(k); box.append(t);
     });
@@ -1006,6 +1143,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     box.append(h);
     if (d.summary) { const s = document.createElement('div'); s.className = 'summary'; linkify(s, d.summary); box.append(s); }
 
+    renderToc(box, tr);
     if (d.metadata?.length) {
       const sec = document.createElement('div'); sec.className = 'section'; sec.textContent = tr ? '메타데이터' : 'Metadata'; box.append(sec);
       const dl = document.createElement('dl');
@@ -1050,7 +1188,8 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     const payload = {
       label: S.orig.label, summary: S.orig.summary, metadata: S.orig.metadata,
       requiredStatement: S.orig.requiredStatement,
-      canvasLabels: S.orig.canvasLabels.length <= 300 ? S.orig.canvasLabels : []
+      canvasLabels: S.orig.canvasLabels.length <= 300 ? S.orig.canvasLabels : [],
+      ...(S.orig.tocLabels?.length ? { tocLabels: S.orig.tocLabels.slice(0, 300) } : {})
     };
     $('translateBtn').disabled = true;
     setStatus(`<span class="spinner"></span>${lang}로 번역 중…`);
@@ -1076,11 +1215,13 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
   $('loadBtn').onclick = () => load($('manifestUrl').value);
   $('fileBtn').onclick = () => $('fileInput').click();
   $('fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
-  let dragN = 0;
+  let dragN = 0, innerDrag = false;
+  addEventListener('dragstart', () => { innerDrag = true; });
+  addEventListener('dragend', () => { innerDrag = false; });
   addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) { dragN++; $('dropHint').hidden = false; } });
   addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; $('dropHint').hidden = true; } });
   addEventListener('dragover', e => e.preventDefault());
-  addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('dropHint').hidden = true; if (e.dataTransfer.files.length) openFiles(e.dataTransfer.files); else { const u = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain'); if (u) load(u.split('\n')[0]); } });
+  addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('dropHint').hidden = true; if (innerDrag) { innerDrag = false; return; } if (e.dataTransfer.files.length) openFiles(e.dataTransfer.files); else { const u = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain'); if (u) load(u.split('\n')[0]); } });
   $('manifestUrl').addEventListener('keydown', e => { if (e.key === 'Enter') load(e.target.value); });
   // 붙여넣기만 하면 바로 열기 (입력창 안에서든, 페이지 아무 곳에서든)
   const pastable = t => /^\s*(https?:\/\/|\{)/i.test(t);
