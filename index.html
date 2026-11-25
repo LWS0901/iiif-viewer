@@ -203,8 +203,8 @@
         <div class="chips" id="samples">
           <button class="chip" data-url="https://iiif.io/api/presentation/4.0/example/uc08_3d_annotation.json">그리스 조각상 (3D)</button>
           <button class="chip" data-url="https://iiif.harvardartmuseums.org/manifests/object/299843">Harvard Art Museums</button>
-          <button class="chip" data-url="https://iiif.io/api/cookbook/recipe/0001-mvm-image/manifest.json">Cookbook, 단일 이미지</button>
-          <button class="chip" data-url="https://iiif.io/api/cookbook/recipe/0006-text-language/manifest.json">Cookbook, 다국어</button>
+          <button class="chip" data-url="https://manifests.collections.yale.edu/ycba/obj/34">Yale Center for British Art</button>
+          <button class="chip" data-url="https://iiif.europeana.eu/presentation/90402/SK_A_2344/manifest?format=3">Europeana (다국어)</button>
         </div>
       </div>
       <button class="paddle prev" id="prevBtn" aria-label="이전" hidden>‹</button>
@@ -804,7 +804,8 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       element: $('osd'),
       prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
       showNavigator: true, navigatorPosition: 'BOTTOM_RIGHT',
-      crossOriginPolicy: false, gestureSettingsMouse: { clickToZoom: false }
+      crossOriginPolicy: false, gestureSettingsMouse: { clickToZoom: false },
+      maxZoomPixelRatio: 6, zoomPerScroll: 1.3, visibilityRatio: 0.5, imageSmoothingEnabled: true
     });
     // 타일 방식이 실패하면 다음 방법으로 자동 전환
     S.viewer.addHandler('open-failed', () => {
