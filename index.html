@@ -969,7 +969,7 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     // OpenSeadragon 기본 영어 오류 문구는 숨기고 직접 안내
     S.viewer._showMessage = () => {};
     const L = () => $('loading3d');
-    S.viewer.addHandler('open', () => { if (S.imgQueue) { S.imgQueue.done = true; L().hidden = true; } });
+    S.viewer.addHandler('open', () => { if (S.imgQueue) { S.imgQueue.done = true; L().hidden = true; S.viewer.viewport.goHome(true); setTimeout(() => S.imgQueue?.done && !S.userMoved && S.viewer.viewport.goHome(true), 300); } });
     S.viewer.addHandler('tile-loaded', () => { if (S.imgQueue) L().hidden = true; });
     S.viewer.addHandler('open-failed', () => {
       const q = S.imgQueue; if (!q || q.done || q.idx !== S.idx) return;
