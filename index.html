@@ -64,7 +64,7 @@
   /* viewer column (dark) */
   .viewer-col{display:flex;flex-direction:column;min-width:0;min-height:0;background:linear-gradient(var(--surface-dark-elevated),var(--canvas-dark));color:var(--on-dark);padding:var(--lg);gap:var(--md)}
   .stage{position:relative;flex:1;min-height:0;background:var(--canvas-dark);border-radius:var(--r-md);overflow:hidden}
-  #osd{position:absolute;inset:0}
+  #osd{position:absolute !important;inset:0;width:100%;height:100%}
   #empty{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--md);text-align:center;padding:var(--xxl);background:var(--canvas-dark)}
   .display-md{font-family:var(--display);font-weight:300;font-size:35px;line-height:1.25;margin:0}
   #empty .display-md{color:var(--on-dark);text-wrap:balance}
@@ -804,7 +804,13 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
       element: $('osd'),
       prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
       showNavigator: true, navigatorPosition: 'BOTTOM_RIGHT',
-      crossOriginPolicy: 'Anonymous', gestureSettingsMouse: { clickToZoom: false }
+      crossOriginPolicy: false, gestureSettingsMouse: { clickToZoom: false }
+    });
+    // 타일 방식이 실패하면 다음 방법으로 자동 전환
+    S.viewer.addHandler('open-failed', () => {
+      const q = S.imgQueue; if (!q || !q.list.length || q.idx !== S.idx) return;
+      const next = q.list.shift(); S.viewer.open(next);
+      if (!q.list.length) S.viewer.addOnceHandler('open-failed', () => { if (q.idx === S.idx) setStatus('이미지를 불러오지 못했습니다. 제공 기관 서버가 외부 접근을 막고 있을 수 있어요.', true); });
     });
   }
 
@@ -824,7 +830,18 @@ export function snapshot(){ R.renderer.render(R.scene, R.camera); return R.rende
     S.idx = Math.max(0, Math.min(i, S.canvases.length-1));
     const c = S.canvases[S.idx];
     initViewer(); setMode(c.kind);
-    if (c.kind === 'image') S.viewer.open(c.svc ? c.svc + '/info.json' : { type:'image', url: c.img });
+    if (c.kind === 'image') {
+      // 1) IIIF 이미지 서비스(타일)  2) 원본 이미지 주소  3) 서비스의 전체 이미지  4) 썸네일
+      const https = u => (location.protocol === 'https:' && u) ? u.replace(/^http:\/\//, 'https://') : u;
+      const seen = new Set(), list = [];
+      const add = src => { const k = typeof src === 'string' ? src : src?.url; if (k && !seen.has(k)) { seen.add(k); list.push(src); } };
+      if (c.svc) add(https(c.svc) + '/info.json');
+      if (c.img) add({ type:'image', url: https(c.img) });
+      if (c.svc) { add({ type:'image', url: https(c.svc) + '/full/max/0/default.jpg' }); add({ type:'image', url: https(c.svc) + '/full/full/0/default.jpg' }); }
+      if (c.thumb) add({ type:'image', url: https(c.thumb) });
+      S.imgQueue = { idx: S.idx, list };
+      S.viewer.open(list.shift());
+    }
     else if (c.kind === 'video' || c.kind === 'audio') {
       const el = document.createElement(c.kind); el.controls = true; el.src = c.media.url; el.crossOrigin = 'anonymous';
       if (/m3u8/i.test(c.media.url) && !el.canPlayType('application/vnd.apple.mpegurl')) {
