@@ -1,10 +1,11 @@
 // Vercel 서버리스 함수: POST /api/translate
 // 환경 변수 (Vercel → Project → Settings → Environment Variables)
 //   GEMINI_API_KEY  (필수) Google AI Studio에서 발급한 키
-//   GEMINI_MODEL    (선택) 기본값 gemini-3.8-flash
+//   GEMINI_MODEL    (선택) 쉼표로 여러 개 지정 가능. 앞 모델이 혼잡하면 다음 모델로 넘어감
+//                   기본값 gemini-3.8-flash,gemini-2.5-flash,gemini-3.5-flash-lite
 //   ALLOWED_ORIGIN  (선택) 화면을 다른 도메인(GitHub Pages 등)에 둘 때 그 주소. 예: https://username.github.io
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const MODELS = (process.env.GEMINI_MODEL || 'gemini-3.8-flash,gemini-2.5-flash,gemini-3.5-flash-lite').split(',').map(s => s.trim()).filter(Boolean);
 const LANGS = ['Korean', 'English', 'Japanese', 'Simplified Chinese', 'Traditional Chinese', 'French', 'German', 'Spanish'];
 const MAX_BYTES = 120_000;
 
@@ -24,6 +25,8 @@ function limited(ip) {
   arr.push(now); hits.set(ip, arr);
   return arr.length > max;
 }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function extractJson(text) {
   const t = String(text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
@@ -56,22 +59,36 @@ module.exports = async function handler(req, res) {
   const input = JSON.stringify(payload);
   if (Buffer.byteLength(input) > MAX_BYTES) return res.status(413).json({ error: '메타데이터가 너무 큽니다' });
 
-  try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM }] },
-        contents: [{ role: 'user', parts: [{ text: `Target language: ${lang}\n\nInput JSON:\n${input}` }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-      })
-    });
-    const j = await r.json();
-    if (!r.ok) return res.status(502).json({ error: 'Gemini 오류: ' + (j.error?.message || r.status) });
-    const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    if (!text) return res.status(502).json({ error: 'Gemini가 빈 응답을 보냈습니다' + (j.promptFeedback?.blockReason ? ` (${j.promptFeedback.blockReason})` : '') });
-    return res.status(200).json(extractJson(text));
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
+  const reqBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: `Target language: ${lang}\n\nInput JSON:\n${input}` }] }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+  });
+
+  let lastErr = '알 수 없는 오류';
+  // 모델마다 최대 2번 시도, 혼잡(429/500/503)이면 잠시 기다렸다 재시도하고 그래도 안 되면 다음 모델로
+  for (const model of MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+          body: reqBody
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          lastErr = `${model}: ${j.error?.message || 'HTTP ' + r.status}`;
+          if ([429, 500, 503, 504].includes(r.status)) { await sleep(800 * (attempt + 1)); continue; }
+          if (r.status === 404 || r.status === 400 && /model/i.test(lastErr)) break; // 이 모델을 못 쓰면 다음 모델로
+          return res.status(502).json({ error: 'Gemini 오류: ' + lastErr });
+        }
+        const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+        if (!text) { lastErr = `${model}: 빈 응답` + (j.promptFeedback?.blockReason ? ` (${j.promptFeedback.blockReason})` : ''); break; }
+        return res.status(200).json(extractJson(text));
+      } catch (e) {
+        lastErr = `${model}: ${e.message}`;
+      }
+    }
   }
+  return res.status(503).json({ error: '지금 Gemini 서버가 혼잡합니다. 잠시 후 다시 시도하세요 (' + lastErr + ')' });
 };
