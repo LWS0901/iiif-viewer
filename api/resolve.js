@@ -105,7 +105,12 @@ module.exports = async function handler(req, res) {
 
   try {
     const page = await get(target);
-    if (page.status >= 400) return res.status(502).json({ error: `페이지를 가져오지 못했습니다 (HTTP ${page.status})` });
+    if (page.status >= 400) {
+      const blocked = (page.status === 403 || page.status === 429 || page.status === 503) && /cloudflare|captcha|access denied|attention required/i.test(page.text);
+      return res.status(502).json({ error: blocked
+        ? '이 기관 사이트가 보안 서비스로 자동 접속을 차단하고 있어 열 수 없습니다'
+        : `페이지를 가져오지 못했습니다 (HTTP ${page.status})` });
+    }
 
     // 1) 주소 자체가 매니페스트
     const direct = iiifJson(page.text);
