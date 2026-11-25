@@ -38,7 +38,7 @@ async function get(u, ms = 9000) {
     });
     if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { cur = new URL(r.headers.get('location'), x).href; continue; }
     const buf = Buffer.from(await r.arrayBuffer());
-    return { status: r.status, ctype: r.headers.get('content-type') || '', text: buf.subarray(0, MAX_PAGE).toString('utf8'), url: cur };
+    return { status: r.status, ctype: r.headers.get('content-type') || '', text: buf.subarray(0, MAX_PAGE).toString('utf8'), buf, url: cur };
   }
   throw new Error('리다이렉트가 너무 많습니다');
 }
@@ -97,6 +97,19 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 허용됩니다' });
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
   if (limited(ip)) return res.status(429).json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요' });
+
+  // 이미지 대신 가져오기: 기관 서버가 브라우저 접속을 막을 때 마지막 수단으로 사용
+  const img = String(req.query?.img || '');
+  if (img) {
+    try {
+      const r = await get(img, 20000);
+      if (r.status >= 400 || !/^image\//i.test(r.ctype)) return res.status(502).json({ error: `이미지를 가져오지 못했습니다 (HTTP ${r.status})` });
+      if (r.buf.length > 4_300_000) return res.status(413).json({ error: '이미지가 너무 큽니다' });
+      res.setHeader('Content-Type', r.ctype);
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+      return res.status(200).send(r.buf);
+    } catch (e) { return res.status(502).json({ error: e.message }); }
+  }
 
   const target = String(req.query?.url || '');
   if (!target) return res.status(400).json({ error: 'url 값이 필요합니다' });
